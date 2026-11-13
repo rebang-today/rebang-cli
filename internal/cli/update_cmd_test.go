@@ -108,4 +108,3 @@ func TestUpdateEndToEnd(t *testing.T) {
 		t.Fatal("binary not replaced")
 	}
 }
-
