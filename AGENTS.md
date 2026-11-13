@@ -22,6 +22,11 @@
 | `internal/errs` | 结构化错误与退出码（D-32） |
 | `internal/update` | manifest、sha256、minisign 校验与自升级 |
 | `internal/skill` | 内嵌 Agent Skill（`files/` 目录即 skill 内容） |
+| `internal/release`、`tools/manifestgen` | 发版时生成 `manifest.json`，不随程序发布 |
+| `scripts/` | `install.sh`、`install.ps1`，发版时上传到 CDN |
+| `.goreleaser.yaml`、`.github/workflows/` | 构建、签名、发布流水线，说明见 `docs/release.md` |
+
+安装包命名 `rebang_<版本>_<系统>_<架构>.tar.gz|zip` 被 goreleaser、manifestgen、安装脚本与 `internal/update` 共同依赖，修改时需同步。`internal/update/minisign.pub` 是发布公钥，只能替换为正式公钥，不要提交测试密钥。
 
 ## 约定
 
@@ -37,6 +42,7 @@
 
 ```bash
 make check          # gofmt 检查、go vet、go test
+make snapshot       # 本地试跑 goreleaser（不签名、不发布）
 make build          # 构建到 bin/rebang
 REBANG_API_BASE=http://127.0.0.1:9898 ./bin/rebang menus   # 连本地服务端
 REBANG_CONFIG_DIR=$(mktemp -d) ./bin/rebang auth status     # 隔离配置目录

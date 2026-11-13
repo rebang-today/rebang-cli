@@ -17,10 +17,10 @@ vet:
 	go vet ./...
 
 fmt:
-	gofmt -w cmd internal
+	gofmt -w cmd internal tools
 
 lint: vet
-	@test -z "$$(gofmt -l cmd internal)" || (echo "需要 gofmt:"; gofmt -l cmd internal; exit 1)
+	@test -z "$$(gofmt -l cmd internal tools)" || (echo "需要 gofmt:"; gofmt -l cmd internal tools; exit 1)
 
 check: lint test ## 提交前检查
 
