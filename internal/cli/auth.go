@@ -251,3 +251,11 @@ func newAccountCmd(a *App) *cobra.Command {
 		},
 	}
 }
+
+// ToAccountView 把账号信息转换为输出结构，供交互界面复用。
+func ToAccountView(acct *api.Account, now time.Time, web string) AccountView {
+	return toAccountView(acct, now, web)
+}
+
+// MemberText 返回会员状态的中文描述。
+func (v AccountView) MemberText() string { return v.memberText() }

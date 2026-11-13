@@ -1,5 +1,5 @@
 # rebang CLI 构建脚本
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//' || echo 0.0.0-dev)
+VERSION ?= $(or $(shell git describe --tags --match 'v*' --dirty 2>/dev/null | sed 's/^v//'),0.0.0-dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 PKG     := github.com/rebang-today/rebang-cli/internal/buildinfo

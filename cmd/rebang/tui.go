@@ -1,6 +1,6 @@
 package main
 
-import "github.com/rebang-today/rebang-cli/internal/cli"
+import "github.com/rebang-today/rebang-cli/internal/tui"
 
-// runTUI 由交互界面包提供，见 internal/tui。
-var runTUI func(*cli.App) error
+// runTUI 不带参数运行时进入交互界面。
+var runTUI = tui.Run

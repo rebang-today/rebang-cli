@@ -63,33 +63,42 @@ func newUpdateCmd(a *App) *cobra.Command {
 				}
 				return a.Writer().Write(updateOutput(res, msg))
 			}
-			exe, err := Executable()
-			if err != nil {
-				return errs.New(errs.ExitGeneral, errs.CodeGeneral, "无法定位当前程序: "+err.Error(), "")
-			}
-			if update.ManagedBy(exe) == "homebrew" {
-				return errs.New(errs.ExitGeneral, "managed_install", "当前程序通过 Homebrew 安装", "运行 brew upgrade rebang 升级")
-			}
 			a.Info("正在下载 %s …\n", m.Version)
-			bin, err := update.Download(ctx, m, buildinfo.Platform())
+			skills, err := InstallRelease(ctx, m)
 			if err != nil {
 				return err
 			}
-			if err := update.Replace(exe, bin); err != nil {
-				var e *errs.Error
-				if errors.As(err, &e) {
-					return e
-				}
-				return errs.New(errs.ExitGeneral, errs.CodeGeneral, "替换程序失败: "+err.Error(), "使用有权限的用户重新运行，或重新执行安装脚本")
-			}
 			res.Updated = true
-			res.SkillsUpdated = syncSkillsWith(ctx, exe)
+			res.SkillsUpdated = skills
 			return a.Writer().Write(updateOutput(res, "已升级到 "+m.Version))
 		},
 	}
 	cmd.Flags().BoolVar(&check, "check", false, "只检查是否有新版本，不升级")
 	cmd.Flags().BoolVar(&force, "force", false, "即使已是最新版本也重新安装")
 	return cmd
+}
+
+// InstallRelease 下载、校验并替换当前程序，随后同步 skill。交互界面的自动升级也走这里。
+func InstallRelease(ctx context.Context, m *update.Manifest) ([]string, error) {
+	exe, err := Executable()
+	if err != nil {
+		return nil, errs.New(errs.ExitGeneral, errs.CodeGeneral, "无法定位当前程序: "+err.Error(), "")
+	}
+	if update.ManagedBy(exe) == "homebrew" {
+		return nil, errs.New(errs.ExitGeneral, "managed_install", "当前程序通过 Homebrew 安装", "运行 brew upgrade rebang 升级")
+	}
+	bin, err := update.Download(ctx, m, buildinfo.Platform())
+	if err != nil {
+		return nil, err
+	}
+	if err := update.Replace(exe, bin); err != nil {
+		var e *errs.Error
+		if errors.As(err, &e) {
+			return nil, e
+		}
+		return nil, errs.New(errs.ExitGeneral, errs.CodeGeneral, "替换程序失败: "+err.Error(), "使用有权限的用户重新运行，或重新执行安装脚本")
+	}
+	return syncSkillsWith(ctx, exe), nil
 }
 
 // syncSkillsWith 用新程序同步 skill，保证 skill 与程序版本一致（D-60）。
