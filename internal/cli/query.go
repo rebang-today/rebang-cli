@@ -221,7 +221,17 @@ func addListTargetFlags(cmd *cobra.Command, t *listTarget) {
 }
 
 // FetchList 拉取榜单，按 snapshot_id 翻页直到 limit。
+// 只给出有二级 Tab 的一级 Tab 时，默认使用第一个二级 Tab。
 func FetchList(ctx context.Context, c *api.Client, node, tab, subTab string, limit int) (*ListResult, error) {
+	if tab != "" && subTab == "" {
+		subs, err := c.TabChildren(ctx, tab)
+		if err != nil {
+			return nil, api.MapError(err)
+		}
+		if len(subs) > 0 {
+			subTab = subs[0].Key
+		}
+	}
 	res := &ListResult{NodeID: node, Tab: tab, SubTab: subTab, Items: []ListItem{}}
 	q := api.ListQuery{NodeID: node, Tab: tab, SubTab: subTab, Page: 1, PageSize: 50}
 	if limit < 50 {
@@ -278,6 +288,16 @@ func Heat(raw json.RawMessage) string {
 	var m map[string]any
 	if json.Unmarshal(raw, &m) != nil {
 		return ""
+	}
+	// 多数榜单把展示文案放在 display_text_items，例如“1290万热度”。
+	if items, ok := m["display_text_items"].([]any); ok {
+		for _, it := range items {
+			if obj, ok := it.(map[string]any); ok {
+				if s := scalar(obj["text"]); s != "" {
+					return s
+				}
+			}
+		}
 	}
 	for _, k := range heatKeys {
 		if v, ok := m[k]; ok {

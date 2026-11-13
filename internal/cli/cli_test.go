@@ -255,6 +255,28 @@ func TestListPaginatesWithSnapshot(t *testing.T) {
 	if !strings.HasPrefix(out, "1. [标题1](https://e.com/1)（1.2万）") {
 		t.Fatal(out)
 	}
+	// 只给一级 Tab 时默认使用第一个二级 Tab。
+	out, _, _ = h.run(false, "list", "--tab", "weibo", "-n", "1")
+	decode(t, out, &v)
+	last := h.api.requests[len(h.api.requests)-1]
+	if v.SubTab != "daily" || last.URL.Query().Get("sub_tab") != "daily" {
+		t.Fatalf("sub_tab=%q query=%s", v.SubTab, last.URL.RawQuery)
+	}
+}
+
+func TestHeat(t *testing.T) {
+	cases := map[string]string{
+		`{"display_text_items":[{"text":"1290万热度"}],"hot_value":1}`: "1290万热度",
+		`{"hot_value":"1.2万"}`:    "1.2万",
+		`{"heat_score":12345}`:    "12345",
+		`{"author":{"name":"x"}}`: "",
+		``:                        "",
+	}
+	for in, want := range cases {
+		if got := Heat(json.RawMessage(in)); got != want {
+			t.Errorf("Heat(%s) = %q, want %q", in, got, want)
+		}
+	}
 }
 
 func TestListLockedNeedsMembership(t *testing.T) {
