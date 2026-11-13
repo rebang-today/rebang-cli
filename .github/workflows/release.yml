@@ -1,0 +1,129 @@
+# 发版流水线（D-55）：构建 → sha256 与 minisign 签名 → GitHub Releases → Homebrew tap
+# → 上传 CDN → 最后写入 manifest.json。
+#
+# Secrets（放在名为 release 的 Environment 中）：
+#   MINISIGN_SECRET_KEY   minisign 私钥文件内容
+#   MINISIGN_PASSWORD     私钥密码
+#   HOMEBREW_TAP_TOKEN    对 rebang-today/homebrew-tap 有写权限的 token
+#   OSS_ACCESS_KEY_ID     仅限 cli/ 目录写权限的 OSS 子账号 AccessKey
+#   OSS_ACCESS_KEY_SECRET
+# Variables：
+#   OSS_BUCKET            Bucket 名称
+#   OSS_ENDPOINT          S3 兼容访问地址，例如 https://oss-cn-<地域>.aliyuncs.com
+#   OSS_REGION            地域，例如 cn-<地域>
+#   CDN_BASE_URL          CDN 上 cli 目录的公开地址，与程序内置的 manifest 地址一致
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: release
+    env:
+      CDN_BASE_URL: ${{ vars.CDN_BASE_URL }}
+      OSS_BUCKET: ${{ vars.OSS_BUCKET }}
+      OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: 检查内置公钥
+        run: |
+          if [ -z "$(tr -d '[:space:]' < internal/update/minisign.pub)" ]; then
+            echo "::error::internal/update/minisign.pub 为空，发布的程序将无法自升级"
+            exit 1
+          fi
+
+      - name: 安装 minisign
+        run: sudo apt-get update -q && sudo apt-get install -y -q minisign
+
+      - name: 写入签名私钥
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          key="$RUNNER_TEMP/minisign.key"
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > "$key"
+          chmod 600 "$key"
+          echo "MINISIGN_KEY_FILE=$key" >> "$GITHUB_ENV"
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
+
+      - name: 用内置公钥校验签名
+        run: |
+          for f in dist/rebang_*.tar.gz dist/rebang_*.zip; do
+            minisign -V -q -p internal/update/minisign.pub -m "$f"
+          done
+
+      - name: 删除签名私钥
+        if: always()
+        run: rm -f "$RUNNER_TEMP/minisign.key"
+
+      # 预发布版本（v0.2.0-rc.1 等）只发 GitHub Releases，不上传 CDN、不更新 manifest。
+      - name: 上传 CDN
+        if: ${{ !contains(github.ref_name, '-') }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          AWS_DEFAULT_REGION: ${{ vars.OSS_REGION }}
+          # OSS 的 S3 兼容接口不支持新版 AWS CLI 默认附加的校验头。
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        run: |
+          aws configure set default.s3.addressing_style virtual
+          ver="${GITHUB_REF_NAME#v}"
+          put() { aws s3 cp "$1" "s3://$OSS_BUCKET/cli/$2" --endpoint-url "$OSS_ENDPOINT" --only-show-errors "${@:3}"; }
+          for f in dist/rebang_"$ver"_* dist/checksums.txt; do
+            put "$f" "v$ver/$(basename "$f")"
+          done
+          put scripts/install.sh install.sh --cache-control no-cache --content-type text/x-shellscript
+          put scripts/install.ps1 install.ps1 --cache-control no-cache --content-type text/plain
+
+      - name: 写入 manifest.json（最后一步）
+        if: ${{ !contains(github.ref_name, '-') }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          AWS_DEFAULT_REGION: ${{ vars.OSS_REGION }}
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        run: |
+          # min_version 沿用线上值；需要强制升级时手动修改线上 manifest（D-51）。
+          min="$(curl -fsSL "$CDN_BASE_URL/manifest.json" 2>/dev/null | jq -r '.min_version // empty' || true)"
+          go run ./tools/manifestgen \
+            -version "$GITHUB_REF_NAME" \
+            -min-version "$min" \
+            -base-url "$CDN_BASE_URL" \
+            -notes-url "https://github.com/$GITHUB_REPOSITORY/releases/tag/$GITHUB_REF_NAME" \
+            -checksums dist/checksums.txt \
+            -o dist/manifest.json
+          cat dist/manifest.json
+          # 写入前确认 CDN 上的安装包可以下载，避免客户端拿到无法下载的版本。
+          url="$(jq -r '.platforms["linux/amd64"].url' dist/manifest.json)"
+          curl -fsSI "$url" > /dev/null
+          aws configure set default.s3.addressing_style virtual
+          aws s3 cp dist/manifest.json "s3://$OSS_BUCKET/cli/manifest.json" \
+            --endpoint-url "$OSS_ENDPOINT" --only-show-errors \
+            --cache-control no-cache --content-type application/json
