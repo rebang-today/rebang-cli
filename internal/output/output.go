@@ -187,7 +187,8 @@ func RenderTableTheme(t ui.Theme, cols []Column, rows [][]string, termWidth int)
 		for i := range cols {
 			v := ""
 			if i < len(row) {
-				v = singleLine(row[i])
+				// 去掉不可见字符与控制字符，避免终端宽度计算不一致导致错行。
+				v = ui.CleanText(row[i])
 			}
 			if m := cols[i].Max; m > 0 && runewidth.StringWidth(v) > m {
 				v = runewidth.Truncate(v, m, "…")

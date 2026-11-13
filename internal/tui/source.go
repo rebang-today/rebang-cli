@@ -14,7 +14,6 @@ import (
 type Source interface {
 	Menus(ctx context.Context) ([]api.Menu, error)
 	MenuData(ctx context.Context, menuID int64) (*menuData, error)
-	Following(ctx context.Context) ([]api.Node, error)
 	List(ctx context.Context, t listTarget, limit int) (*cli.ListResult, error)
 	Search(ctx context.Context, q string, limit int) (*cli.SearchResult, error)
 	Account(ctx context.Context) (*cli.AccountView, error)
@@ -39,6 +38,14 @@ func (s *apiSource) Menus(ctx context.Context) ([]api.Menu, error) {
 }
 
 func (s *apiSource) MenuData(ctx context.Context, menuID int64) (*menuData, error) {
+	if menuID == followMenuID {
+		// 订阅：用户订阅的 Tab（需登录），服务端已按用户设置排序。
+		tabs, err := s.client.FollowingTabs(ctx)
+		if err != nil {
+			return nil, api.MapError(err)
+		}
+		return &menuData{tabs: tabs}, nil
+	}
 	tabs, err := s.client.MenuTabs(ctx, menuID)
 	if err != nil {
 		return nil, api.MapError(err)
@@ -52,11 +59,6 @@ func (s *apiSource) MenuData(ctx context.Context, menuID int64) (*menuData, erro
 		d.nodes = nodes
 	}
 	return d, nil
-}
-
-func (s *apiSource) Following(ctx context.Context) ([]api.Node, error) {
-	n, err := s.client.FollowingNodes(ctx)
-	return n, api.MapError(err)
 }
 
 func (s *apiSource) List(ctx context.Context, t listTarget, limit int) (*cli.ListResult, error) {

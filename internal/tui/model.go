@@ -12,6 +12,7 @@ import (
 	"github.com/rebang-today/rebang-cli/internal/api"
 	"github.com/rebang-today/rebang-cli/internal/cli"
 	"github.com/rebang-today/rebang-cli/internal/errs"
+	"github.com/rebang-today/rebang-cli/internal/ui"
 	"github.com/rebang-today/rebang-cli/internal/update"
 )
 
@@ -62,8 +63,6 @@ type model struct {
 	data        map[int64]*menuData
 	menuLoading map[int64]bool
 	menuErrs    map[int64]string
-	following   []api.Node
-	followReady bool
 	srcCur      int
 	srcOff      int
 	subIdx      int
@@ -130,10 +129,6 @@ type (
 		data *menuData
 		err  error
 	}
-	followingMsg struct {
-		nodes []api.Node
-		err   error
-	}
 	listMsg struct {
 		seq int
 		res *cli.ListResult
@@ -181,6 +176,7 @@ func newModel(opt Options) *model {
 		visited:     map[int64]bool{},
 		subMem:      map[string]int{},
 		loggedIn:    opt.LoggedIn,
+		menuIdx:     1, // 启动时停在第一个服务端菜单（综合）
 		input:       in,
 		width:       100,
 		height:      30,
@@ -194,7 +190,7 @@ func ctx() (context.Context, context.CancelFunc) {
 func (m *model) Init() tea.Cmd {
 	cmds := []tea.Cmd{m.loadMenus(), m.tick()}
 	if m.loggedIn {
-		cmds = append(cmds, m.loadAccount(), m.loadFollowing())
+		cmds = append(cmds, m.loadAccount())
 	}
 	cmds = append(cmds, m.checkUpdate())
 	return tea.Batch(cmds...)
@@ -221,16 +217,6 @@ func (m *model) loadMenu(id int64) tea.Cmd {
 		defer cancel()
 		d, err := src.MenuData(c, id)
 		return menuDataMsg{id, d, err}
-	}
-}
-
-func (m *model) loadFollowing() tea.Cmd {
-	src := m.opt.Source
-	return func() tea.Msg {
-		c, cancel := ctx()
-		defer cancel()
-		n, err := src.Following(c)
-		return followingMsg{n, err}
 	}
 }
 
@@ -342,7 +328,7 @@ func (m *model) busy() bool {
 	if mn, ok := m.curMenu(); ok && m.menuLoading[mn.ID] {
 		return true
 	}
-	return m.curSource().kind == srcFollowing && m.loggedIn && !m.expired && !m.followReady
+	return false
 }
 
 func (m *model) spinTick() tea.Cmd {
@@ -366,9 +352,10 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.menuErr = ""
-		m.menus = msg.menus
-		if len(msg.menus) == 0 {
-			return m, nil
+		// “订阅”固定在最前面（数字键 0），其余是服务端的菜单。
+		m.menus = append([]api.Menu{{ID: followMenuID, Name: followMenuName}}, msg.menus...)
+		for i := range m.menus {
+			m.menus[i].Name = ui.CleanText(m.menus[i].Name)
 		}
 		m.menuIdx = clampIdx(m.menuIdx, len(msg.menus))
 		return m, m.enterMenu(m.menuIdx)
@@ -382,26 +369,10 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.data == nil {
 			msg.data = &menuData{}
 		}
-		m.data[msg.id] = msg.data
+		m.data[msg.id] = cleanMenuData(msg.data)
 		if mn, ok := m.curMenu(); ok && mn.ID == msg.id {
 			m.restorePos()
 			return m, m.loadCurrent()
-		}
-		return m, nil
-	case followingMsg:
-		m.followReady = true
-		if msg.err != nil {
-			if isAuth(msg.err) {
-				m.markExpired()
-			}
-			return m, nil
-		}
-		m.following = msg.nodes
-		if src := m.curSource(); src.kind == srcFollowing {
-			m.subIdx = clampIdx(m.subIdx, len(msg.nodes))
-			if m.searchQ == "" && m.target.key() == "||" {
-				return m, m.loadCurrent()
-			}
 		}
 		return m, nil
 	case debounceMsg:
@@ -486,7 +457,7 @@ func (m *model) setList(res *cli.ListResult) {
 		if meta == "" && it.Label != "" {
 			meta = it.Label
 		}
-		m.items = append(m.items, row{title: it.Title, url: it.URL, mobile: it.MobileURL, meta: meta, desc: it.Desc})
+		m.items = append(m.items, row{title: ui.CleanText(it.Title), url: it.URL, mobile: it.MobileURL, meta: ui.CleanText(meta), desc: ui.CleanText(it.Desc)})
 	}
 	m.access = res.ContentAccess
 	m.listNotice = ""
@@ -508,7 +479,7 @@ func (m *model) setSearch(res *cli.SearchResult) {
 		if src == "" {
 			src = it.Source
 		}
-		m.items = append(m.items, row{title: it.Title, url: it.URL, mobile: it.MobileURL, meta: src, desc: it.Snippet})
+		m.items = append(m.items, row{title: ui.CleanText(it.Title), url: it.URL, mobile: it.MobileURL, meta: ui.CleanText(src), desc: ui.CleanText(it.Snippet)})
 	}
 	if len(m.items) == 0 {
 		m.listNotice = "没有找到相关内容"
@@ -555,7 +526,22 @@ func (m *model) fail(err error) {
 	m.flash(errText(err), true)
 }
 
-func (m *model) flash(s string, isErr bool) { m.message, m.isError = s, isErr }
+func (m *model) flash(s string, isErr bool) { m.message, m.isError = ui.CleanText(s), isErr }
+
+// cleanMenuData 清洗菜单数据中要显示的名称，避免不可见字符打乱终端排版。
+func cleanMenuData(d *menuData) *menuData {
+	for i := range d.tabs {
+		t := &d.tabs[i]
+		t.Name = ui.CleanText(t.Name)
+		for j := range t.Children {
+			t.Children[j].Name = ui.CleanText(t.Children[j].Name)
+		}
+	}
+	for i := range d.nodes {
+		d.nodes[i].Name = ui.CleanText(d.nodes[i].Name)
+	}
+	return d
+}
 
 func errText(err error) string {
 	var e *errs.Error
@@ -591,7 +577,7 @@ func (m *model) curSources() []source {
 func (m *model) curSource() source {
 	srcs := m.curSources()
 	if len(srcs) == 0 {
-		return source{kind: -1}
+		return source{}
 	}
 	return srcs[clampIdx(m.srcCur, len(srcs))]
 }
@@ -601,14 +587,11 @@ func (m *model) curSubs() []subTab {
 	if m.searchQ != "" {
 		return nil
 	}
-	return m.curSource().subs(m.following)
+	return m.curSource().subs()
 }
 
 func (m *model) memKey(s source) string {
 	mn, _ := m.curMenu()
-	if s.kind == srcFollowing {
-		return s.key()
-	}
 	return itoa(mn.ID) + "/" + s.key()
 }
 
@@ -625,7 +608,7 @@ func (m *model) savePos() {
 	}
 }
 
-// restorePos 恢复菜单上次的位置；第一次进入时选第一个榜单（跳过“我的关注”）。
+// restorePos 恢复菜单上次的位置；第一次进入时选第一个榜单。
 func (m *model) restorePos() {
 	mn, _ := m.curMenu()
 	srcs := m.curSources()
@@ -633,9 +616,6 @@ func (m *model) restorePos() {
 		m.srcCur = m.srcMem[mn.ID]
 	} else {
 		m.srcCur = 0
-		if len(srcs) > 1 {
-			m.srcCur = 1
-		}
 	}
 	m.srcCur = clampIdx(m.srcCur, len(srcs))
 	m.subIdx, m.autoSub = m.recallSub(m.curSource())
@@ -700,6 +680,10 @@ func (m *model) enterMenu(i int) tea.Cmd {
 	m.savePos()
 	m.menuIdx, m.srcOff, m.hoverOK = i, 0, false
 	mn := m.menus[i]
+	if mn.ID == followMenuID && (!m.loggedIn || m.expired) {
+		// 未登录时订阅为空，不发请求。
+		m.data[mn.ID] = &menuData{}
+	}
 	if m.data[mn.ID] == nil {
 		m.clearList()
 		if m.menuLoading[mn.ID] {
@@ -725,7 +709,14 @@ func (m *model) clearList() {
 func (m *model) loadCurrent() tea.Cmd {
 	m.debSeq++
 	m.debPending = false
-	t, ok := m.curSource().target(m.subIdx, m.following)
+	src := m.curSource()
+	if src.unsupported() {
+		// 内容监控走网站自己的接口，公开的 /v1 榜单接口取不到，直接提示而不发请求。
+		m.clearList()
+		m.listNotice = monitoringNotice
+		return nil
+	}
+	t, ok := src.target(m.subIdx)
 	if !ok {
 		m.clearList()
 		return nil
@@ -749,7 +740,7 @@ func (m *model) moveSource(d int) tea.Cmd {
 	m.subIdx, m.autoSub = m.recallSub(m.curSource())
 	m.savePos()
 	m.clamp()
-	t, ok := m.curSource().target(m.subIdx, m.following)
+	t, ok := m.curSource().target(m.subIdx)
 	if !ok {
 		return m.loadCurrent()
 	}
@@ -781,7 +772,7 @@ func (m *model) selectSource(i int) tea.Cmd {
 
 // setSub 切换到第 i 个子榜单并立即加载。
 func (m *model) setSub(i int) tea.Cmd {
-	subs := m.curSource().subs(m.following)
+	subs := m.curSource().subs()
 	if len(subs) == 0 {
 		return nil
 	}
@@ -831,8 +822,9 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 	m.message = ""
-	if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
-		if i := int(key[0] - '1'); i < len(m.menus) && i != m.menuIdx {
+	if len(key) == 1 && key[0] >= '0' && key[0] <= '9' {
+		// 0 是订阅，1～9 是服务端菜单（m.menus 的下标与数字一致）。
+		if i := int(key[0] - '0'); i < len(m.menus) && i != m.menuIdx {
 			return m.enterMenu(i)
 		}
 		return nil
@@ -873,7 +865,8 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 		case len(m.menus) == 0:
 			m.menuErr = ""
 			cmds = append(cmds, m.loadMenus())
-		case ok && m.data[mn.ID] == nil:
+		case ok && (m.data[mn.ID] == nil || (mn.ID == followMenuID && m.loggedIn && !m.expired)):
+			// 菜单未加载或加载失败时重新加载；订阅菜单同时刷新订阅列表。
 			if !m.menuLoading[mn.ID] {
 				cmds = append(cmds, m.loadMenu(mn.ID))
 			}
@@ -881,7 +874,7 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 			cmds = append(cmds, m.refresh())
 		}
 		if m.loggedIn && !m.expired {
-			cmds = append(cmds, m.loadAccount(), m.loadFollowing())
+			cmds = append(cmds, m.loadAccount())
 		}
 		return tea.Batch(cmds...)
 	case "y":

@@ -43,8 +43,8 @@ func TestViewGolden(t *testing.T) {
 	section("极窄 30x5", snapshot(m, 30, 5))
 	key(t, m, "2")
 	section("切换分类 90x8", snapshot(m, 90, 8))
-	key(t, m, "1", "esc", "g")
-	section("我的关注·未登录 90x8", snapshot(m, 90, 8))
+	key(t, m, "0")
+	section("订阅·未登录 90x8", snapshot(m, 90, 8))
 
 	fe := newFake()
 	fe.lists["|zhihu|"] = nil

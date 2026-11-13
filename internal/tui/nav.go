@@ -20,12 +20,12 @@ type menuData struct {
 type srcKind int
 
 const (
-	srcFollowing srcKind = iota
+	srcNone srcKind = iota
 	srcTab
 	srcNode
 )
 
-// source 是左栏的一项：我的关注、一级 Tab，或（菜单没有 Tab 时的）节点。
+// source 是左栏的一项：一级 Tab，或（菜单没有 Tab 时的）节点。
 type source struct {
 	kind  srcKind
 	label string
@@ -36,14 +36,22 @@ type source struct {
 // subTab 是右栏顶部子榜单条的一项。
 type subTab struct{ key, label string }
 
-const followingLabel = "我的关注"
+// followMenuID 是“订阅”菜单的编号。它不是服务端的菜单，数据来自用户订阅的 Tab。
+const followMenuID int64 = -1
 
-// sources 返回菜单的左栏来源，第一项固定为“我的关注”。
+// monitoringTabKey 是订阅中“内容监控”Tab 的 key，它的列表不在公开的榜单接口里。
+const monitoringTabKey = "monitoring"
+
+const monitoringNotice = "内容监控暂不支持在命令行查看，请在今日热榜网站查看"
+
+const followMenuName = "订阅"
+
+// sources 返回菜单的左栏来源。
 func sources(d *menuData) []source {
-	out := []source{{kind: srcFollowing, label: followingLabel}}
 	if d == nil {
-		return out
+		return nil
 	}
+	var out []source
 	for _, t := range d.tabs {
 		out = append(out, source{kind: srcTab, label: t.Name, tab: t})
 	}
@@ -57,33 +65,26 @@ func sources(d *menuData) []source {
 
 // key 用于记住每个来源上次的子榜单。
 func (s source) key() string {
-	switch s.kind {
-	case srcTab:
-		return "t:" + s.tab.Key
-	case srcNode:
+	if s.kind == srcNode {
 		return "n:" + s.node.NodeID
 	}
-	return "following"
+	return "t:" + s.tab.Key
 }
 
-// subs 返回来源的子榜单：Tab 的二级 Tab，或“我的关注”中关注的节点。
-func (s source) subs(following []api.Node) []subTab {
-	var out []subTab
-	switch s.kind {
-	case srcTab:
-		for _, c := range s.tab.Children {
-			out = append(out, subTab{c.Key, c.Name})
-		}
-	case srcFollowing:
-		for _, n := range following {
-			out = append(out, subTab{n.NodeID, n.Name})
-		}
+// subs 返回子榜单条上显示的二级 Tab。与网站一致，只有一个时不显示（请求时仍带上它的 key）。
+func (s source) subs() []subTab {
+	if s.kind != srcTab || len(s.tab.Children) < 2 {
+		return nil
+	}
+	out := make([]subTab, len(s.tab.Children))
+	for i, c := range s.tab.Children {
+		out[i] = subTab{c.Key, c.Name}
 	}
 	return out
 }
 
-// target 返回来源在第 sub 个子榜单下对应的榜单；“我的关注”为空时返回 false。
-func (s source) target(sub int, following []api.Node) (listTarget, bool) {
+// target 返回来源在第 sub 个二级 Tab 下对应的榜单。
+func (s source) target(sub int) (listTarget, bool) {
 	switch s.kind {
 	case srcTab:
 		t := listTarget{tab: s.tab.Key, title: s.tab.Name}
@@ -94,11 +95,7 @@ func (s source) target(sub int, following []api.Node) (listTarget, bool) {
 	case srcNode:
 		return listTarget{node: s.node.NodeID, title: s.node.Name}, true
 	}
-	if s.kind != srcFollowing || len(following) == 0 {
-		return listTarget{}, false
-	}
-	n := following[clampIdx(sub, len(following))]
-	return listTarget{node: n.NodeID, title: n.Name}, true
+	return listTarget{}, false
 }
 
 func clampIdx(i, n int) int {
@@ -149,4 +146,9 @@ func window(ws []int, cur, avail int) (lo, hi int) {
 			return lo, hi
 		}
 	}
+}
+
+// unsupported 报告该来源的列表无法通过公开接口加载（目前只有内容监控）。
+func (s source) unsupported() bool {
+	return s.kind == srcTab && (s.tab.Key == monitoringTabKey || s.tab.Type == monitoringTabKey)
 }

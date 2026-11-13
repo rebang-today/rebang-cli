@@ -57,6 +57,29 @@ func TestRenderTableTruncate(t *testing.T) {
 	}
 }
 
+// TestTableStripsInvisible 表格去掉不可见字符；JSON 保留原文。
+func TestTableStripsInvisible(t *testing.T) {
+	title := "\u200b\u2061\u2062\u2063\u2064\u202c\ufeff\u00ad标题\u200b\u2061\u2062\u2063\u2064\u202c\ufeff\u00ad\n第二行"
+	s := RenderTable([]Column{{Title: "#"}, {Title: "标题"}}, [][]string{{"1", title}}, 40)
+	if !strings.Contains(s, "1  标题 第二行") {
+		t.Fatalf("%q", s)
+	}
+	for _, r := range s {
+		if r >= 0x2000 && r <= 0x206f || r == 0xfeff || r == 0xad {
+			t.Fatalf("表格仍含 %U：%q", r, s)
+		}
+	}
+	var b bytes.Buffer
+	w := Writer{Out: &b, Format: JSON}
+	if err := w.Write(Result{Data: map[string]string{"title": title}}); err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]string
+	if err := json.Unmarshal(b.Bytes(), &got); err != nil || got["title"] != title {
+		t.Fatalf("JSON 应保留原文：%q", b.String())
+	}
+}
+
 func TestMarkdown(t *testing.T) {
 	s := RenderMarkdownTable([]Column{{Title: "a"}}, [][]string{{"x|y\nz"}})
 	if !strings.Contains(s, `| x\|y z |`) {

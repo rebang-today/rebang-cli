@@ -21,7 +21,8 @@ type fakeSource struct {
 	menus     []api.Menu
 	data      map[int64]*menuData
 	menuErr   error
-	following []api.Node
+	follow    []api.Tab
+	followErr error
 	lists     map[string][]cli.ListItem
 	listErr   error
 	listCalls []string
@@ -35,12 +36,17 @@ type fakeSource struct {
 
 func (f *fakeSource) Menus(context.Context) ([]api.Menu, error) { return f.menus, nil }
 func (f *fakeSource) MenuData(_ context.Context, id int64) (*menuData, error) {
+	if id == followMenuID {
+		if f.followErr != nil {
+			return nil, f.followErr
+		}
+		return &menuData{tabs: f.follow}, nil
+	}
 	if f.menuErr != nil {
 		return nil, f.menuErr
 	}
 	return f.data[id], nil
 }
-func (f *fakeSource) Following(context.Context) ([]api.Node, error) { return f.following, nil }
 func (f *fakeSource) List(_ context.Context, t listTarget, _ int) (*cli.ListResult, error) {
 	f.listCalls = append(f.listCalls, t.key())
 	if f.listErr != nil {
@@ -158,11 +164,11 @@ func TestStartupLoadsFirstList(t *testing.T) {
 	if m.target.tab != "zhihu" || len(m.items) != 2 {
 		t.Fatalf("启动后应打开第一个榜单，target=%+v items=%d", m.target, len(m.items))
 	}
-	if m.focus != focusTree || m.srcCur != 1 {
+	if m.focus != focusTree || m.srcCur != 0 || m.menuIdx != 1 {
 		t.Fatalf("启动后焦点应在左栏的第一个榜单，focus=%v cur=%d", m.focus, m.srcCur)
 	}
 	v := m.View()
-	for _, want := range []string{"1 综合", "2 科技", "★ 我的关注", "知乎第一", "100万", "2 条", "未登录", "/ 搜索"} {
+	for _, want := range []string{"0 订阅", "1 综合", "2 科技", "知乎第一", "100万", "2 条", "未登录", "/ 搜索"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("界面缺少 %q\n%s", want, v)
 		}
@@ -280,30 +286,30 @@ func TestMenuSwitchRestoresPosition(t *testing.T) {
 		t.Fatalf("target=%+v", m.target)
 	}
 	key(t, m, "2")
-	if m.menuIdx != 1 || m.target.node != "n1" || m.items[0].title != "少数派文章" {
+	if m.menuIdx != 2 || m.target.node != "n1" || m.items[0].title != "少数派文章" {
 		t.Fatalf("2 应切换到科技并打开第一个节点，target=%+v", m.target)
 	}
 	if m.focus != focusTree || m.hasStrip() {
 		t.Fatal("切换菜单不改变焦点；节点没有子榜单条")
 	}
 	key(t, m, "1")
-	if m.srcCur != 2 || m.target.tab != "weibo" || m.target.subTab != "news" || m.items[0].title != "微博要闻" {
+	if m.srcCur != 1 || m.target.tab != "weibo" || m.target.subTab != "news" || m.items[0].title != "微博要闻" {
 		t.Fatalf("回到综合应恢复微博 · 要闻，cur=%d target=%+v", m.srcCur, m.target)
 	}
 	key(t, m, "]")
-	if m.menuIdx != 1 {
+	if m.menuIdx != 2 {
 		t.Fatal("] 应切换到下一个分类")
 	}
 	key(t, m, "]")
 	if m.menuIdx != 0 {
-		t.Fatal("] 在最后一个分类应回到第一个")
+		t.Fatal("] 在最后一个分类应回到订阅")
 	}
 	key(t, m, "[")
-	if m.menuIdx != 1 {
-		t.Fatal("[ 应切换到上一个分类")
+	if m.menuIdx != 2 {
+		t.Fatal("[ 应循环到最后一个分类")
 	}
 	key(t, m, "9")
-	if m.menuIdx != 1 {
+	if m.menuIdx != 2 {
 		t.Fatal("不存在的数字键应忽略")
 	}
 }
@@ -332,18 +338,6 @@ func TestEmptyListHint(t *testing.T) {
 	v := m.View()
 	if !strings.Contains(v, "暂无内容") || !strings.Contains(v, "↓ 换一个榜单") {
 		t.Fatalf("空列表应提示换一个榜单\n%s", v)
-	}
-}
-
-func TestFollowingNotLoggedIn(t *testing.T) {
-	f := newFake()
-	m := start(t, f, Options{})
-	key(t, m, "k")
-	if m.srcCur != 0 || m.debPending {
-		t.Fatal("选中我的关注不需要加载")
-	}
-	if v := m.View(); !strings.Contains(v, "登录后可查看关注的榜单") || !strings.Contains(v, "rebang auth login") {
-		t.Fatalf("未登录时应提示登录\n%s", v)
 	}
 }
 
@@ -395,37 +389,6 @@ func TestSearchAndBack(t *testing.T) {
 	}
 }
 
-func TestLoggedInShowsFollowingAndMembership(t *testing.T) {
-	f := newFake()
-	f.following = []api.Node{{NodeID: "n1", Name: "少数派"}, {NodeID: "n2", Name: "虎嗅"}}
-	f.lists["n2||"] = []cli.ListItem{{Title: "虎嗅文章", URL: "https://example.com/h1"}}
-	f.account = &cli.AccountView{ID: 1, Email: "u@example.com", IsMember: true, MemberExpiresAt: "2027-01-01T00:00:00+08:00"}
-	m := start(t, f, Options{LoggedIn: true})
-	v := m.View()
-	if !strings.Contains(v, "我的关注") || !strings.Contains(v, "u@example.com") || !strings.Contains(v, "会员") {
-		t.Fatalf("登录后应显示关注与会员状态\n%s", v)
-	}
-	key(t, m, "g")
-	settle(t, m)
-	if m.target.node != "n1" || m.items[0].title != "少数派文章" {
-		t.Fatalf("我的关注应打开第一个关注的榜单，target=%+v", m.target)
-	}
-	if v := m.View(); !strings.Contains(v, "虎嗅") {
-		t.Fatalf("关注的榜单应显示在子榜单条\n%s", v)
-	}
-	key(t, m, "l")
-	if m.target.node != "n2" || m.items[0].title != "虎嗅文章" {
-		t.Fatalf("→ 应切换到下一个关注，target=%+v", m.target)
-	}
-
-	f2 := newFake()
-	m = start(t, f2, Options{LoggedIn: true})
-	key(t, m, "g")
-	if !strings.Contains(m.View(), "还没有关注的榜单") {
-		t.Fatalf("没有关注时应提示\n%s", m.View())
-	}
-}
-
 func TestExpiredLoginAndMembershipError(t *testing.T) {
 	f := newFake()
 	f.acctErr = errs.Unauthorized("登录已失效")
@@ -464,7 +427,7 @@ func TestMouse(t *testing.T) {
 	if opened != "https://example.com/z2" {
 		t.Fatalf("双击应打开，opened=%q", opened)
 	}
-	click(t, m, 2, 3) // 左栏第 3 项：微博
+	click(t, m, 2, 2) // 左栏第 2 项：微博
 	if m.target.tab != "weibo" || m.items[0].title != "微博热搜" || m.focus != focusTree || m.debPending {
 		t.Fatalf("点击左栏应立即打开榜单且焦点在左栏，target=%+v focus=%v", m.target, m.focus)
 	}
@@ -485,12 +448,12 @@ func TestMouse(t *testing.T) {
 	// 标题栏的菜单。
 	var menuX int
 	for _, sp := range m.menuSpans() {
-		if sp.idx == 1 {
+		if sp.idx == 2 {
 			menuX = sp.x0 + 1
 		}
 	}
 	click(t, m, menuX, 0)
-	if m.menuIdx != 1 || m.target.node != "n1" || m.focus != focusTree {
+	if m.menuIdx != 2 || m.target.node != "n1" || m.focus != focusTree {
 		t.Fatalf("点击菜单应切换分类，menu=%d target=%+v", m.menuIdx, m.target)
 	}
 	_, _ = m.Update(tea.MouseMsg{X: 2, Y: 3, Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
@@ -501,11 +464,11 @@ func TestNarrowLayout(t *testing.T) {
 	m := start(t, f, Options{})
 	m.Update(tea.WindowSizeMsg{Width: 50, Height: 12})
 	v := m.View()
-	if strings.Contains(v, "│") || !strings.Contains(v, "★ 我的关注") || strings.Contains(v, "知乎第一") {
+	if strings.Contains(v, "│") || !strings.Contains(v, "微博") || strings.Contains(v, "知乎第一") {
 		t.Fatalf("窄窗口启动时应只显示左栏\n%s", v)
 	}
 	key(t, m, "tab")
-	if v := m.View(); !strings.Contains(v, "知乎第一") || strings.Contains(v, "★ 我的关注") {
+	if v := m.View(); !strings.Contains(v, "知乎第一") || strings.Contains(v, "微博") {
 		t.Fatalf("tab 应切换到列表\n%s", v)
 	}
 }
@@ -548,11 +511,11 @@ func TestTruncation(t *testing.T) {
 	}
 	// 截断后的点击位置仍然正确。
 	for _, sp := range m.menuSpans() {
-		if sp.idx == 2 {
+		if sp.idx == 5 {
 			click(t, m, sp.x0, 0)
 		}
 	}
-	if m.menuIdx != 2 {
+	if m.menuIdx != 5 {
 		t.Fatalf("点击截断后的菜单栏，menu=%d", m.menuIdx)
 	}
 }
@@ -603,7 +566,7 @@ func TestTwoPaneThreshold(t *testing.T) {
 	m := start(t, newFake(), Options{})
 	m.Update(tea.WindowSizeMsg{Width: 60, Height: 10})
 	v := m.View()
-	if !m.wide() || !strings.Contains(v, "│") || !strings.Contains(v, "★ 我的关注") || !strings.Contains(v, "知乎第一") {
+	if !m.wide() || !strings.Contains(v, "│") || !strings.Contains(v, "微博") || !strings.Contains(v, "知乎第一") {
 		t.Fatalf("60 列应为双栏\n%s", v)
 	}
 	key(t, m, "j")
@@ -686,5 +649,151 @@ func TestWechatFallsBackWhenFollowingEmpty(t *testing.T) {
 	settle(t, m)
 	if m.target.subTab != "following" || m.items[0].title != "关注的文章" {
 		t.Fatalf("关注不为空时应停在关注，target=%+v", m.target)
+	}
+}
+
+func TestSingleSubTabHidden(t *testing.T) {
+	f := newFake()
+	f.data[1].tabs[0].Children = []api.SubTab{{Key: "only", Name: "唯一"}}
+	f.lists["|zhihu|only"] = f.lists["|zhihu|"]
+	m := start(t, f, Options{})
+	if m.target.subTab != "only" || len(m.items) != 2 {
+		t.Fatalf("请求时应带上唯一子榜单的 key，target=%+v", m.target)
+	}
+	v := m.View()
+	if m.hasStrip() || strings.Contains(v, "唯一") || strings.Contains(v, "←→") {
+		t.Fatalf("只有一个子榜单时不显示子榜单条与 ←→ 提示\n%s", v)
+	}
+	n := len(f.listCalls)
+	key(t, m, "l", "h")
+	if len(f.listCalls) != n || m.target.subTab != "only" {
+		t.Fatalf("←→ 不应有任何动作，calls=%v", f.listCalls[n:])
+	}
+}
+
+// TestInvisibleCharsStripped 标题中的不可见字符（反复制水印）不应输出到终端，也不能撑破行宽。
+func TestInvisibleCharsStripped(t *testing.T) {
+	junk := strings.Repeat("\u200b\u200c\u200d\u2061\u2062\u2063\u2064\u202c\ufeff\u00ad", 6)
+	f := newFake()
+	f.data[1].tabs[0].Name = junk + "知乎"
+	f.lists["|zhihu|"] = []cli.ListItem{
+		{Title: "普通标题", URL: "https://example.com/1", Heat: "1万"},
+		{Title: junk + "带水印的标题" + junk + "\n第二行\t结尾", URL: "https://example.com/2", Heat: junk + "2万"},
+	}
+	m := start(t, f, Options{})
+	for _, w := range []int{100, 60, 40} {
+		m.Update(tea.WindowSizeMsg{Width: w, Height: 8})
+		v := m.View()
+		for i, line := range strings.Split(v, "\n") {
+			if lw := lipgloss.Width(line); lw > w {
+				t.Errorf("宽 %d：第 %d 行宽 %d", w, i, lw)
+			}
+		}
+		for _, r := range v {
+			if (r >= 0x200b && r <= 0x200f) || (r >= 0x202a && r <= 0x202e) || (r >= 0x2060 && r <= 0x2069) || r == 0xfeff || r == 0xad || r == '\t' {
+				t.Fatalf("宽 %d：输出含 %U", w, r)
+			}
+		}
+	}
+	if m.items[1].title != "带水印的标题 第二行 结尾" || m.items[1].url != "https://example.com/2" {
+		t.Fatalf("title=%q", m.items[1].title)
+	}
+}
+
+func TestFollowMenu(t *testing.T) {
+	f := newFake()
+	f.follow = []api.Tab{
+		{Key: "weibo", Name: "微博", Children: []api.SubTab{{Key: "hot", Name: "热搜"}, {Key: "news", Name: "要闻"}}},
+		{Key: "monitoring", Name: "内容监控", Type: "monitoring", Children: []api.SubTab{{Key: "monitoring:all", Name: "全部"}}},
+		{Key: "zhihu", Name: "知乎"},
+	}
+	m := start(t, f, Options{LoggedIn: true})
+	if m.menuIdx != 1 || m.target.tab != "zhihu" {
+		t.Fatal("启动时应停在综合")
+	}
+	key(t, m, "0")
+	if m.menuIdx != 0 || m.target.tab != "weibo" || m.target.subTab != "hot" || m.items[0].title != "微博热搜" {
+		t.Fatalf("0 应切到订阅并打开第一个订阅，target=%+v", m.target)
+	}
+	if v := m.View(); !strings.Contains(v, "0 订阅") || !strings.Contains(v, "监控") || !strings.Contains(v, "要闻") {
+		t.Fatalf("订阅菜单应列出订阅的 Tab 与子榜单\n%s", v)
+	}
+	key(t, m, "l")
+	if m.target.subTab != "news" || m.focus != focusTree {
+		t.Fatalf("→ 应切换子榜单，target=%+v", m.target)
+	}
+	// 内容监控的列表不在公开接口里：不发请求，显示明确提示，不崩溃。
+	key(t, m, "j")
+	settle(t, m)
+	if m.target.key() != "||" || m.loading || m.listErr != "" || m.listNotice != monitoringNotice {
+		t.Fatalf("内容监控应直接提示，target=%+v err=%q notice=%q", m.target, m.listErr, m.listNotice)
+	}
+	if v := m.View(); !strings.Contains(v, "内容监控暂不支持在命令行查看") || strings.Contains(v, "←→") {
+		t.Fatalf("应显示内容监控提示\n%s", v)
+	}
+	key(t, m, "r", "l")
+	if m.listNotice != monitoringNotice || m.listErr != "" {
+		t.Fatalf("在内容监控上按键不应出错，err=%q", m.listErr)
+	}
+	key(t, m, "j")
+	settle(t, m)
+	if m.target.tab != "zhihu" || len(m.items) == 0 || m.listNotice != "" {
+		t.Fatalf("↓ 应延迟加载下一个订阅，target=%+v", m.target)
+	}
+	key(t, m, "1", "0")
+	if m.target.tab != "zhihu" {
+		t.Fatalf("回到订阅应恢复上次的位置，target=%+v", m.target)
+	}
+	key(t, m, "k", "k")
+	settle(t, m)
+	if m.target.subTab != "news" {
+		t.Fatalf("应记住订阅里微博的子榜单，target=%+v", m.target)
+	}
+}
+
+func TestFollowMenuEmptyStates(t *testing.T) {
+	// 未登录：左栏为空，右栏提示登录，不发请求。
+	f := newFake()
+	f.followErr = errors.New("不应请求订阅")
+	m := start(t, f, Options{})
+	key(t, m, "0")
+	v := m.View()
+	if m.menuIdx != 0 || len(m.curSources()) != 0 || !strings.Contains(v, "登录后查看订阅：rebang auth login") {
+		t.Fatalf("未登录时应提示登录\n%s", v)
+	}
+	if strings.Contains(v, "不应请求订阅") {
+		t.Fatal("未登录时不应请求订阅")
+	}
+
+	// 已登录但没有订阅。
+	f = newFake()
+	m = start(t, f, Options{LoggedIn: true})
+	key(t, m, "0")
+	if v := m.View(); !strings.Contains(v, "还没有订阅任何榜单") || !strings.Contains(v, "添加订阅") {
+		t.Fatalf("没有订阅时应提示去网站添加\n%s", v)
+	}
+
+	// 接口报错：显示错误，r 重试。
+	f = newFake()
+	f.followErr = errs.Network(errors.New("dial tcp: refused"))
+	m = start(t, f, Options{LoggedIn: true})
+	key(t, m, "0")
+	if v := m.View(); !strings.Contains(v, "加载失败") || !strings.Contains(v, "r 重试") {
+		t.Fatalf("订阅加载失败应提示重试\n%s", v)
+	}
+	f.followErr = nil
+	f.follow = []api.Tab{{Key: "zhihu", Name: "知乎"}}
+	key(t, m, "r")
+	if m.target.tab != "zhihu" || len(m.items) != 2 {
+		t.Fatalf("r 应重新加载订阅，target=%+v", m.target)
+	}
+}
+
+func TestLoggedInShowsMembership(t *testing.T) {
+	f := newFake()
+	f.account = &cli.AccountView{ID: 1, Email: "u@example.com", IsMember: true, MemberExpiresAt: "2027-01-01T00:00:00+08:00"}
+	m := start(t, f, Options{LoggedIn: true})
+	if v := m.View(); !strings.Contains(v, "u@example.com") || !strings.Contains(v, "会员") {
+		t.Fatalf("登录后应显示会员状态\n%s", v)
 	}
 }

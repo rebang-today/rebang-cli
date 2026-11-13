@@ -96,12 +96,7 @@ func (m *model) leftWidth() int {
 	return w
 }
 
-func sourceLabel(s source) string {
-	if s.kind == srcFollowing {
-		return "★ " + s.label
-	}
-	return s.label
-}
+func sourceLabel(s source) string { return s.label }
 
 // rightX 是右栏第一列的横坐标。
 func (m *model) rightX() int {
@@ -203,8 +198,8 @@ func (m *model) menuLabels() []string {
 	out := make([]string, len(m.menus))
 	for i, mn := range m.menus {
 		out[i] = mn.Name
-		if i < 9 {
-			out[i] = itoa(int64(i+1)) + " " + mn.Name
+		if i <= 9 {
+			out[i] = itoa(int64(i)) + " " + mn.Name
 		}
 	}
 	return out
@@ -358,8 +353,6 @@ func (m *model) sourceLines(w, h int) []string {
 			text = styleSelBlur.Render(" "+label) + gap
 		case m.hovered(focusTree, i):
 			text = " " + styleHoverText.Render(label) + gap
-		case s.kind == srcFollowing:
-			text = " " + styleGroup.Render(label) + gap
 		default:
 			text = " " + label + gap
 		}
@@ -383,8 +376,10 @@ func (m *model) titleRow(w int) string {
 	case m.searchQ != "":
 		title = "搜索“" + m.searchQ + "”"
 	default:
-		if s := m.curSource(); s.kind >= 0 {
+		if s := m.curSource(); s.kind != srcNone {
 			title = s.label
+		} else if mn, ok := m.curMenu(); ok && mn.ID == followMenuID {
+			title = mn.Name
 		}
 	}
 	count := ""
@@ -465,12 +460,10 @@ func (m *model) emptyState(w int) []string {
 	case m.listErr != "":
 		lines := append([]string{styleError.Render("✗ 加载失败"), ""}, wrap(styleDim, m.listErr)...)
 		return append(lines, "", keyHint("r", "重试"))
-	case m.searchQ == "" && m.curSource().kind == srcFollowing && (!m.loggedIn || m.expired):
-		return []string{styleDim.Render("登录后可查看关注的榜单"), "", styleDim.Render("退出后运行 ") + styleKey.Render("rebang auth login")}
-	case m.searchQ == "" && m.curSource().kind == srcFollowing && !m.followReady:
-		return []string{styleHeader.Render(m.spinner()) + " 正在加载关注…"}
-	case m.searchQ == "" && m.curSource().kind == srcFollowing && len(m.following) == 0:
-		return []string{styleDim.Render("还没有关注的榜单"), "", styleDim.Render("可在网站上添加关注")}
+	case m.searchQ == "" && m.inFollowMenu() && (!m.loggedIn || m.expired):
+		return []string{styleDim.Render("登录后查看订阅：") + styleKey.Render("rebang auth login")}
+	case m.searchQ == "" && m.inFollowMenu() && m.data[followMenuID] != nil && len(m.curSources()) == 0:
+		return []string{styleDim.Render("还没有订阅任何榜单"), "", styleDim.Render("可在今日热榜网站上添加订阅")}
 	case m.listNotice != "":
 		lines := []string{styleDim.Render(m.listNotice)}
 		if m.searchQ != "" {
@@ -621,16 +614,22 @@ func (m *model) hints() []hint {
 	return append(hs, hint{"?", "帮助"}, hint{"q", "退出"})
 }
 
-// menuKeys 返回切换菜单的数字键范围，例如“1-8”。
+// inFollowMenu 表示当前在“订阅”菜单。
+func (m *model) inFollowMenu() bool {
+	mn, ok := m.curMenu()
+	return ok && mn.ID == followMenuID
+}
+
+// menuKeys 返回切换菜单的数字键范围，例如“0-8”。
 func (m *model) menuKeys() string {
-	n := len(m.menus)
+	n := len(m.menus) - 1
 	if n > 9 {
 		n = 9
 	}
-	if n <= 1 {
+	if n <= 0 {
 		return "[ ]"
 	}
-	return "1-" + itoa(int64(n))
+	return "0-" + itoa(int64(n))
 }
 
 func (m *model) statusLine() string {
@@ -718,7 +717,7 @@ var helpKeys = []struct {
 	group string
 	keys  []hint
 }{
-	{"浏览", []hint{{"↑ ↓  j k", "在当前栏上下移动，左栏停下后自动加载"}, {"← →  h l", "切换子榜单"}, {"1-9  [ ]", "切换分类"}, {"tab", "切换左右栏"}, {"g G 空格", "开头、结尾、翻页"}}},
+	{"浏览", []hint{{"↑ ↓  j k", "在当前栏上下移动，左栏停下后自动加载"}, {"← →  h l", "切换子榜单"}, {"0-9  [ ]", "切换分类，0 为订阅"}, {"tab", "切换左右栏"}, {"g G 空格", "开头、结尾、翻页"}}},
 	{"操作", []hint{{"回车", "左栏进入列表；列表中在浏览器打开"}, {"esc", "列表返回左栏；搜索时返回榜单"}, {"/", "搜索"}, {"y", "复制链接"}, {"r", "刷新"}, {"?  q", "帮助、退出"}}},
 }
 
