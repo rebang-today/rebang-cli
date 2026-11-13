@@ -598,3 +598,93 @@ func TestRefreshTick(t *testing.T) {
 		t.Fatalf("定时刷新应重新加载榜单，calls=%v", f.listCalls)
 	}
 }
+
+func TestTwoPaneThreshold(t *testing.T) {
+	m := start(t, newFake(), Options{})
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 10})
+	v := m.View()
+	if !m.wide() || !strings.Contains(v, "│") || !strings.Contains(v, "★ 我的关注") || !strings.Contains(v, "知乎第一") {
+		t.Fatalf("60 列应为双栏\n%s", v)
+	}
+	key(t, m, "j")
+	settle(t, m)
+	if v := m.View(); !strings.Contains(v, "微博热搜") || m.focus != focusTree {
+		t.Fatalf("60 列左栏换榜单后应直接看到列表\n%s", v)
+	}
+	m.Update(tea.WindowSizeMsg{Width: wideMinWidth - 1, Height: 10})
+	if v := m.View(); m.wide() || strings.Contains(v, "│") {
+		t.Fatalf("阈值以下应为单栏\n%s", v)
+	}
+}
+
+// wechatFake 在综合下加一个公众号来源（关注、热门两个子榜单）。
+func wechatFake() *fakeSource {
+	f := newFake()
+	f.data[1].tabs = append(f.data[1].tabs, api.Tab{Key: "wechat", Name: "公众号", Children: []api.SubTab{{Key: "following", Name: "关注"}, {Key: "hot", Name: "热门"}}})
+	f.lists["|wechat|hot"] = []cli.ListItem{{Title: "公众号热门", URL: "https://example.com/wx1"}}
+	return f
+}
+
+func TestWechatDefaultsToHotWhenLoggedOut(t *testing.T) {
+	f := wechatFake()
+	m := start(t, f, Options{})
+	key(t, m, "G")
+	settle(t, m)
+	if m.target.subTab != "hot" || m.items[0].title != "公众号热门" {
+		t.Fatalf("未登录进入公众号应选热门，target=%+v", m.target)
+	}
+	for _, c := range f.listCalls {
+		if c == "|wechat|following" {
+			t.Fatal("未登录时不应请求关注子榜")
+		}
+	}
+	// 手动切到关注不会被改回。
+	key(t, m, "h")
+	if m.target.subTab != "following" || len(m.items) != 0 || !strings.Contains(m.View(), "暂无内容") {
+		t.Fatalf("手动选中的关注应照常显示，target=%+v", m.target)
+	}
+}
+
+func TestWechatFallsBackWhenFollowingEmpty(t *testing.T) {
+	f := wechatFake()
+	m := start(t, f, Options{LoggedIn: true})
+	key(t, m, "G")
+	settle(t, m)
+	n := len(f.listCalls)
+	if n < 2 || f.listCalls[n-2] != "|wechat|following" || f.listCalls[n-1] != "|wechat|hot" {
+		t.Fatalf("已登录应先加载关注，为空再切到热门，calls=%v", f.listCalls)
+	}
+	if m.target.subTab != "hot" || m.items[0].title != "公众号热门" {
+		t.Fatalf("target=%+v", m.target)
+	}
+	// 记为该来源的子榜：离开再回来直接是热门。
+	key(t, m, "k")
+	settle(t, m)
+	key(t, m, "j")
+	settle(t, m)
+	if f.listCalls[len(f.listCalls)-1] != "|wechat|hot" || m.target.subTab != "hot" {
+		t.Fatalf("应记住热门，calls=%v", f.listCalls)
+	}
+	// 手动切到关注，即使为空也不改回。
+	key(t, m, "h")
+	if m.target.subTab != "following" || len(m.items) != 0 {
+		t.Fatalf("手动选中的关注不应被改回，target=%+v", m.target)
+	}
+	key(t, m, "k")
+	settle(t, m)
+	key(t, m, "j")
+	settle(t, m)
+	if m.target.subTab != "following" {
+		t.Fatalf("应记住手动选的关注，target=%+v", m.target)
+	}
+
+	// 已登录且关注不为空时停在关注。
+	f2 := wechatFake()
+	f2.lists["|wechat|following"] = []cli.ListItem{{Title: "关注的文章", URL: "https://example.com/wx2"}}
+	m = start(t, f2, Options{LoggedIn: true})
+	key(t, m, "G")
+	settle(t, m)
+	if m.target.subTab != "following" || m.items[0].title != "关注的文章" {
+		t.Fatalf("关注不为空时应停在关注，target=%+v", m.target)
+	}
+}

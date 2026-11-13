@@ -16,10 +16,12 @@ import (
 )
 
 const (
-	listLimit    = 100
-	searchLimit  = 50
-	doubleClick  = 400 * time.Millisecond
-	wideMinWidth = 70
+	listLimit   = 100
+	searchLimit = 50
+	doubleClick = 400 * time.Millisecond
+	// wideMinWidth 是双栏的最小宽度：左栏最宽 18 列 + 分隔线 + 右栏至少 37 列
+	// （序号、约 17 列标题与热度列）。更窄时退化为单栏。
+	wideMinWidth = 56
 	requestLimit = 30 * time.Second
 )
 
@@ -72,6 +74,8 @@ type model struct {
 	// 左栏移动后延迟加载右栏，debSeq 用于丢弃过期的延迟。
 	debSeq     int
 	debPending bool
+	// autoSub 表示当前子榜单是自动选的（没有记忆），而不是用户手动选的。
+	autoSub bool
 
 	target     listTarget
 	searchQ    string
@@ -427,7 +431,7 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.listErr = ""
 		m.setList(msg.res)
-		return m, nil
+		return m, m.wechatFallback()
 	case searchMsg:
 		if msg.seq != m.listSeq {
 			return m, nil
@@ -608,14 +612,17 @@ func (m *model) memKey(s source) string {
 	return itoa(mn.ID) + "/" + s.key()
 }
 
-// savePos 记住当前菜单的来源与当前来源的子榜单。
+// savePos 记住当前菜单的来源与当前来源（手动选过）的子榜单。
 func (m *model) savePos() {
 	mn, ok := m.curMenu()
 	if !ok || m.data[mn.ID] == nil {
 		return
 	}
 	m.srcMem[mn.ID], m.visited[mn.ID] = m.srcCur, true
-	m.subMem[m.memKey(m.curSource())] = m.subIdx
+	// 自动选的子榜单不记忆，下次进入时重新按默认规则选择。
+	if !m.autoSub {
+		m.subMem[m.memKey(m.curSource())] = m.subIdx
+	}
 }
 
 // restorePos 恢复菜单上次的位置；第一次进入时选第一个榜单（跳过“我的关注”）。
@@ -631,9 +638,57 @@ func (m *model) restorePos() {
 		}
 	}
 	m.srcCur = clampIdx(m.srcCur, len(srcs))
-	m.subIdx = m.subMem[m.memKey(m.curSource())]
+	m.subIdx, m.autoSub = m.recallSub(m.curSource())
 	m.visited[mn.ID] = true
 	m.clamp()
+}
+
+// 公众号来源的子榜单规则，与网站一致：默认“关注”，未登录或关注为空时改用“热门”。
+const (
+	wechatTab       = "wechat"
+	wechatFollowing = "following"
+	wechatHot       = "hot"
+)
+
+func subIndex(s source, key string) int {
+	for i, c := range s.tab.Children {
+		if c.Key == key {
+			return i
+		}
+	}
+	return -1
+}
+
+// recallSub 返回来源上次的子榜单；没有记忆时按默认规则选择，auto 为 true。
+func (m *model) recallSub(s source) (idx int, auto bool) {
+	if i, ok := m.subMem[m.memKey(s)]; ok {
+		return i, false
+	}
+	if s.kind == srcTab && s.tab.Key == wechatTab {
+		hot := subIndex(s, wechatHot)
+		if hot >= 0 && (!m.loggedIn || m.expired) {
+			return hot, true
+		}
+		if f := subIndex(s, wechatFollowing); f >= 0 {
+			return f, true
+		}
+	}
+	return 0, true
+}
+
+// wechatFallback 在自动进入公众号“关注”且结果为空时切到“热门”，并记为该来源的子榜单。
+func (m *model) wechatFallback() tea.Cmd {
+	s := m.curSource()
+	if !m.autoSub || m.searchQ != "" || len(m.items) != 0 || s.kind != srcTab || s.tab.Key != wechatTab || m.target.subTab != wechatFollowing {
+		return nil
+	}
+	hot := subIndex(s, wechatHot)
+	if hot < 0 {
+		return nil
+	}
+	m.subIdx, m.autoSub = hot, false
+	m.savePos()
+	return m.loadCurrent()
 }
 
 // enterMenu 切换到第 i 个菜单并加载它上次停留的榜单，不改变焦点。
@@ -691,7 +746,7 @@ func (m *model) moveSource(d int) tea.Cmd {
 		return nil
 	}
 	m.srcCur = next
-	m.subIdx = m.subMem[m.memKey(m.curSource())]
+	m.subIdx, m.autoSub = m.recallSub(m.curSource())
 	m.savePos()
 	m.clamp()
 	t, ok := m.curSource().target(m.subIdx, m.following)
@@ -718,7 +773,7 @@ func (m *model) selectSource(i int) tea.Cmd {
 		return nil
 	}
 	m.srcCur = i
-	m.subIdx = m.subMem[m.memKey(m.curSource())]
+	m.subIdx, m.autoSub = m.recallSub(m.curSource())
 	m.savePos()
 	m.clamp()
 	return m.loadCurrent()
@@ -734,7 +789,7 @@ func (m *model) setSub(i int) tea.Cmd {
 	if i == m.subIdx && m.searchQ == "" && !m.debPending {
 		return nil
 	}
-	m.subIdx = i
+	m.subIdx, m.autoSub = i, false
 	m.savePos()
 	return m.loadCurrent()
 }
