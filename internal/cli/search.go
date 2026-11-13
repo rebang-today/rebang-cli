@@ -149,7 +149,7 @@ func newSearchCmd(a *App) *cobra.Command {
 			}
 			return a.Writer().Write(output.Result{
 				Data:    res,
-				Columns: []output.Column{{Title: "#"}, {Title: "标题", Max: 60, Shrink: true}, {Title: "来源", Max: 12}, {Title: "最后在榜"}, {Title: "链接", Max: 60}},
+				Columns: []output.Column{{Title: "#", Kind: output.KindRank}, {Title: "标题", Max: 60, Shrink: true}, {Title: "来源", Max: 12, Kind: output.KindAccent}, {Title: "最后在榜", Kind: output.KindDim}, {Title: "链接", Max: 60, Kind: output.KindDim}},
 				Rows:    rows,
 				Footer:  footer(a, fmt.Sprintf("共 %d 条结果", res.Total)),
 				Markdown: func() string {

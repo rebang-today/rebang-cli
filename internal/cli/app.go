@@ -17,6 +17,7 @@ import (
 	"github.com/rebang-today/rebang-cli/internal/credentials"
 	"github.com/rebang-today/rebang-cli/internal/errs"
 	"github.com/rebang-today/rebang-cli/internal/output"
+	"github.com/rebang-today/rebang-cli/internal/ui"
 )
 
 // App 汇总命令运行所需的依赖，测试时可替换。
@@ -26,6 +27,11 @@ type App struct {
 	Stderr io.Writer
 	// StdoutTTY 表示标准输出连接到终端。
 	StdoutTTY bool
+	// StderrTTY 表示标准错误连接到终端，此时可以显示动画。
+	StderrTTY bool
+	// Color 与 ErrColor 表示标准输出、标准错误可以输出颜色（终端且未设置 NO_COLOR）。
+	Color    bool
+	ErrColor bool
 	// Interactive 表示标准输入与输出均为终端，可以进入交互界面。
 	Interactive bool
 	TermWidth   int
@@ -53,6 +59,9 @@ func NewApp() *App {
 		Stdout:      os.Stdout,
 		Stderr:      os.Stderr,
 		StdoutTTY:   output.IsTerminal(os.Stdout),
+		StderrTTY:   output.IsTerminal(os.Stderr),
+		Color:       ui.ColorEnabled(output.IsTerminal(os.Stdout)),
+		ErrColor:    ui.ColorEnabled(output.IsTerminal(os.Stderr)),
 		Interactive: output.IsTerminal(os.Stdout) && output.IsTerminal(os.Stdin),
 		TermWidth:   output.TerminalWidth(os.Stdout),
 		Config:      cfg,
@@ -110,8 +119,15 @@ func (a *App) Format() output.Format {
 
 // Writer 返回结果输出器。
 func (a *App) Writer() output.Writer {
-	return output.Writer{Out: a.Stdout, Format: a.Format(), Width: a.TermWidth}
+	t := a.Theme()
+	return output.Writer{Out: a.Stdout, Format: a.Format(), Width: a.TermWidth, Theme: &t}
 }
+
+// Theme 返回标准输出使用的样式。
+func (a *App) Theme() ui.Theme { return ui.New(a.Color) }
+
+// ErrTheme 返回标准错误使用的样式。
+func (a *App) ErrTheme() ui.Theme { return ui.New(a.ErrColor) }
 
 // errorAsJSON 决定错误输出是否使用 JSON：输出格式为 json 时使用。
 func (a *App) errorAsJSON() bool {
@@ -146,7 +162,11 @@ func ExecuteContext(ctx context.Context, a *App, args []string) int {
 		return 130
 	}
 	e := classify(err)
-	output.WriteError(a.Stderr, e, a.errorAsJSON())
+	if a.errorAsJSON() {
+		output.WriteError(a.Stderr, e, true)
+	} else {
+		output.WriteErrorTheme(a.Stderr, e, a.ErrTheme())
+	}
 	return e.Exit
 }
 

@@ -47,7 +47,10 @@ func fakeServer(t *testing.T, script []string) (*httptest.Server, *int32) {
 	return srv, &polls
 }
 
+var slowDowns []time.Duration
+
 func run(t *testing.T, script []string) (*api.DeviceToken, error, []time.Duration, string) {
+	slowDowns = nil
 	srv, _ := fakeServer(t, script)
 	defer srv.Close()
 	var sleeps []time.Duration
@@ -60,8 +63,9 @@ func run(t *testing.T, script []string) (*api.DeviceToken, error, []time.Duratio
 			now = now.Add(d)
 			return nil
 		},
-		Now:    func() time.Time { return now },
-		OnCode: func(_ *api.DeviceCode, u string) { shown = u },
+		Now:        func() time.Time { return now },
+		OnCode:     func(_ *api.DeviceCode, u string) { shown = u },
+		OnSlowDown: func(d time.Duration) { slowDowns = append(slowDowns, d) },
 	}
 	tok, err := f.Run(context.Background(), api.DeviceCodeRequest{DeviceID: "d", DeviceName: "n", Platform: "darwin/arm64", ClientVersion: "0.1.0"})
 	return tok, err, sleeps, shown
@@ -77,6 +81,9 @@ func TestFlowSuccessWithSlowDown(t *testing.T) {
 		if sleeps[i] != want[i] {
 			t.Fatalf("sleeps %v", sleeps)
 		}
+	}
+	if len(slowDowns) != 1 || slowDowns[0] != 10*time.Second {
+		t.Fatalf("slow_down 回调 %v", slowDowns)
 	}
 	if shown != "https://rebang.today/cli/authorize?user_code=ABCD-EFGH" {
 		t.Fatalf("url %s", shown)

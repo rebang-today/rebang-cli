@@ -12,6 +12,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/rebang-today/rebang-cli/internal/errs"
+	"github.com/rebang-today/rebang-cli/internal/ui"
 )
 
 // Format 输出格式。
@@ -64,7 +65,24 @@ type Column struct {
 	Max int
 	// Shrink 表示终端过窄时优先压缩这一列。
 	Shrink bool
+	// Kind 决定 table 格式下这一列的样式与对齐。
+	Kind Kind
 }
+
+// Kind 是列的样式类别，只影响 table 格式。
+type Kind int
+
+const (
+	KindText Kind = iota
+	// KindRank 排名：右对齐，前三名高亮。
+	KindRank
+	// KindDim 次要信息（链接、时间等），弱化显示。
+	KindDim
+	// KindAccent 需要突出的短值（热度等）。
+	KindAccent
+	// KindStatus 状态符号：✓ 绿色、! 黄色、✗ 红色。
+	KindStatus
+)
 
 // Result 是一次查询的输出：JSON 原样输出 Data，table 与 md 使用 Columns 和 Rows。
 type Result struct {
@@ -75,6 +93,8 @@ type Result struct {
 	Markdown func() string
 	// Footer 是 table 与 md 格式下附加在末尾的说明。
 	Footer string
+	// Pretty 可选，自定义 table 格式（给人看）的输出，例如键值卡片；为空时输出表格。
+	Pretty func(t ui.Theme, width int) string
 }
 
 // Writer 绑定输出目标与格式。
@@ -83,6 +103,15 @@ type Writer struct {
 	Format Format
 	// Width 为终端宽度，0 表示不截断。
 	Width int
+	// Theme 是 table 格式使用的样式，零值等同于无颜色。
+	Theme *ui.Theme
+}
+
+func (w Writer) theme() ui.Theme {
+	if w.Theme != nil {
+		return *w.Theme
+	}
+	return ui.Plain()
 }
 
 // Write 按格式输出结果。
@@ -102,9 +131,15 @@ func (w Writer) Write(r Result) error {
 		_, err := io.WriteString(w.Out, s)
 		return err
 	default:
-		s := RenderTable(r.Columns, r.Rows, w.Width)
+		t := w.theme()
+		var s string
+		if r.Pretty != nil {
+			s = r.Pretty(t, w.Width)
+		} else {
+			s = RenderTableTheme(t, r.Columns, r.Rows, w.Width)
+		}
 		if r.Footer != "" {
-			s += r.Footer + "\n"
+			s += RenderFooter(t, r.Footer)
 		}
 		_, err := io.WriteString(w.Out, s)
 		return err
@@ -119,10 +154,28 @@ func WriteJSON(out io.Writer, v any) error {
 	return enc.Encode(v)
 }
 
-// RenderTable 渲染对齐的文本表格，正确处理中文宽度。
+// RenderFooter 渲染表格下方的提示：空行保留，文字弱化显示。
+func RenderFooter(t ui.Theme, footer string) string {
+	var b strings.Builder
+	for _, l := range strings.Split(footer, "\n") {
+		if l != "" {
+			l = t.Dim.Render(l)
+		}
+		b.WriteString(l)
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+// RenderTable 渲染不带颜色的对齐文本表格，正确处理中文宽度。
 func RenderTable(cols []Column, rows [][]string, termWidth int) string {
+	return RenderTableTheme(ui.Plain(), cols, rows, termWidth)
+}
+
+// RenderTableTheme 按主题渲染表格：表头弱化加粗，表头下方有分隔线，排名、链接等列按 Kind 着色。
+func RenderTableTheme(t ui.Theme, cols []Column, rows [][]string, termWidth int) string {
 	if len(rows) == 0 {
-		return "（无数据）\n"
+		return t.Dim.Render("（无数据）") + "\n"
 	}
 	widths := make([]int, len(cols))
 	for i, c := range cols {
@@ -177,26 +230,61 @@ func RenderTable(cols []Column, rows [][]string, termWidth int) string {
 		}
 	}
 	var b strings.Builder
-	line := func(vals []string) {
-		for i, v := range vals {
-			if i == len(vals)-1 {
-				b.WriteString(v)
-			} else {
-				b.WriteString(runewidth.FillRight(v, widths[i]))
-				b.WriteString("  ")
-			}
+	last := len(cols) - 1
+	cell := func(i int, v string, style func(string) string) {
+		w := widths[i]
+		switch {
+		case cols[i].Kind == KindRank:
+			v = runewidth.FillLeft(v, w)
+		case i < last:
+			v = runewidth.FillRight(v, w)
 		}
-		b.WriteString("\n")
+		b.WriteString(style(v))
+		if i < last {
+			b.WriteString("  ")
+		}
 	}
-	titles := make([]string, len(cols))
 	for i, c := range cols {
-		titles[i] = c.Title
+		cell(i, c.Title, func(s string) string { return t.TableHd.Render(s) })
 	}
-	line(titles)
+	b.WriteByte('\n')
+	sep := make([]string, len(cols))
+	for i := range cols {
+		sep[i] = strings.Repeat("─", widths[i])
+	}
+	b.WriteString(t.Border.Render(strings.Join(sep, "  ")))
+	b.WriteByte('\n')
 	for _, row := range cells {
-		line(row)
+		for i, v := range row {
+			cell(i, v, func(s string) string { return styleCell(t, cols[i].Kind, v, s) })
+		}
+		b.WriteByte('\n')
 	}
 	return b.String()
+}
+
+func styleCell(t ui.Theme, k Kind, raw, padded string) string {
+	switch k {
+	case KindRank:
+		if n := strings.TrimSpace(raw); n == "1" || n == "2" || n == "3" {
+			return t.Code.Render(padded)
+		}
+		return t.Dim.Render(padded)
+	case KindDim:
+		return t.Dim.Render(padded)
+	case KindAccent:
+		return t.Accent.Render(padded)
+	case KindStatus:
+		switch strings.TrimSpace(raw) {
+		case ui.MarkOK:
+			return t.OK.Render(padded)
+		case ui.MarkWarn:
+			return t.Warn.Render(padded)
+		case ui.MarkErr:
+			return t.Err.Render(padded)
+		}
+	}
+	return padded
 }
 
 // RenderMarkdownTable 渲染 Markdown 表格。
@@ -256,5 +344,21 @@ func WriteError(out io.Writer, err error, asJSON bool) {
 	fmt.Fprintf(out, "错误：%s\n", e.Error())
 	if e.Hint != "" {
 		fmt.Fprintf(out, "提示：%s\n", e.Hint)
+	}
+}
+
+// WriteErrorTheme 输出给人看的错误。主题无颜色时与 WriteError 的文本格式一致。
+func WriteErrorTheme(out io.Writer, err error, t ui.Theme) {
+	if !t.Color {
+		WriteError(out, err, false)
+		return
+	}
+	e := errs.From(err)
+	fmt.Fprintf(out, "%s%s\n", t.Err.Render(ui.MarkErr+" 错误："), t.Strong.Render(e.Message))
+	if e.Hint != "" {
+		fmt.Fprintf(out, "  %s%s\n", t.Accent.Render("提示："), e.Hint)
+	}
+	if e.Cause != nil {
+		fmt.Fprintf(out, "  %s\n", t.Dim.Render("详情："+singleLine(e.Cause.Error())))
 	}
 }

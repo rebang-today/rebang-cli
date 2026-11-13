@@ -43,23 +43,26 @@ CLI 展示授权码并打开浏览器，在网站登录并确认后即可完成�
 			}
 			host, _ := os.Hostname()
 			c := api.New(a.APIBase(), "", a.Invocation())
+			wait := newLoginWaiter(a)
+			defer wait.stop()
 			flow := &auth.Flow{
 				Client: c,
 				Sleep:  a.Sleep,
 				Now:    a.Now,
 				OnCode: func(dc *api.DeviceCode, u string) {
-					a.Info("\n请在浏览器中确认登录，授权码：%s\n%s\n\n", dc.UserCode, u)
+					opened := false
 					if !noBrowser {
-						if err := a.OpenURL(u); err != nil {
-							a.Info("无法自动打开浏览器，请手动打开上面的链接。\n")
-						}
+						opened = a.OpenURL(u) == nil
 					}
-					a.Info("等待确认中…（Ctrl+C 取消）\n")
+					a.Info("%s", loginPrompt(a.ErrTheme(), a.StderrTTY, dc.UserCode, u, opened, !noBrowser))
+					wait.start(dc)
 				},
+				OnSlowDown: wait.slowDown,
 			}
 			tok, err := flow.Run(cmd.Context(), api.DeviceCodeRequest{
 				DeviceID: deviceID, DeviceName: host, Platform: buildinfo.Platform(), ClientVersion: buildinfo.Version,
 			})
+			wait.stop()
 			if err != nil {
 				return err
 			}
@@ -72,11 +75,14 @@ CLI 展示授权码并打开浏览器，在网站登录并确认后即可完成�
 				view = toAccountView(acct, a.Now(), a.Config.Web())
 			}
 			p, _ := credentials.Path()
-			a.Info("登录成功。凭证已保存到 %s\n", p)
+			if a.Format() != output.Table {
+				a.Info("登录成功。凭证已保存到 %s\n", p)
+			}
 			return a.Writer().Write(output.Result{
 				Data:    map[string]any{"logged_in": true, "account": view},
 				Columns: []output.Column{{Title: "账号"}, {Title: "会员"}},
 				Rows:    [][]string{{view.Email, view.memberText()}},
+				Pretty:  loginPretty(loginInfo{view: view, device: host, expiry: tokenExpiry(tok, a.Now()), credPath: p}),
 			})
 		},
 	}
@@ -96,7 +102,7 @@ func newLogoutCmd(a *App) *cobra.Command {
 				if src == credentials.SourceEnv {
 					return errs.New(errs.ExitGeneral, errs.CodeGeneral, "当前凭证来自环境变量 "+credentials.EnvToken+"，无法通过 logout 清除", "取消设置该环境变量即可")
 				}
-				return a.Writer().Write(output.Result{Data: map[string]any{"logged_in": false, "revoked": false}, Columns: []output.Column{{Title: "状态"}}, Rows: [][]string{{"未登录"}}})
+				return a.Writer().Write(output.Result{Data: map[string]any{"logged_in": false, "revoked": false}, Columns: []output.Column{{Title: "状态"}}, Rows: [][]string{{"未登录"}}, Pretty: logoutPretty(false, false)})
 			}
 			ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
 			defer cancel()
@@ -119,6 +125,7 @@ func newLogoutCmd(a *App) *cobra.Command {
 				Data:    map[string]any{"logged_in": false, "revoked": revoked},
 				Columns: []output.Column{{Title: "状态"}},
 				Rows:    [][]string{{"已退出登录"}},
+				Pretty:  logoutPretty(true, revoked),
 			})
 		},
 	}
@@ -187,6 +194,7 @@ func statusResult(st AuthStatus) output.Result {
 		Data:    st,
 		Columns: []output.Column{{Title: "状态"}, {Title: "来源"}, {Title: "Token"}, {Title: "账号"}, {Title: "会员"}},
 		Rows:    [][]string{{state, string(st.Source), st.Token, email, member}},
+		Pretty:  statusPretty(st),
 	}
 }
 
@@ -247,6 +255,7 @@ func newAccountCmd(a *App) *cobra.Command {
 				Data:    v,
 				Columns: []output.Column{{Title: "ID"}, {Title: "邮箱"}, {Title: "会员"}, {Title: "开通或续费"}},
 				Rows:    [][]string{{itoa(v.ID), v.Email, v.memberText(), v.ManageURL}},
+				Pretty:  accountPretty(v),
 			})
 		},
 	}

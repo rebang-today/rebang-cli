@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/rebang-today/rebang-cli/internal/errs"
+	"github.com/rebang-today/rebang-cli/internal/golden"
+	"github.com/rebang-today/rebang-cli/internal/ui"
 )
 
 func TestResolve(t *testing.T) {
@@ -37,11 +39,11 @@ func TestResolve(t *testing.T) {
 func TestRenderTableCJK(t *testing.T) {
 	s := RenderTable([]Column{{Title: "#"}, {Title: "标题"}}, [][]string{{"1", "中文标题"}, {"10", "ab"}}, 0)
 	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
-	if len(lines) != 3 {
+	if len(lines) != 4 {
 		t.Fatalf("lines %q", lines)
 	}
-	if !strings.HasPrefix(lines[1], "1   中文标题") {
-		t.Fatalf("alignment: %q", lines[1])
+	if !strings.HasPrefix(lines[2], "1   中文标题") {
+		t.Fatalf("alignment: %q", lines[2])
 	}
 }
 
@@ -90,4 +92,55 @@ func TestWriteError(t *testing.T) {
 	if !strings.HasPrefix(b.String(), "错误：boom") {
 		t.Fatal(b.String())
 	}
+}
+
+func TestTableGolden(t *testing.T) {
+	cols := []Column{{Title: "#", Kind: KindRank}, {Title: "标题", Max: 20, Shrink: true}, {Title: "热度", Kind: KindAccent}, {Title: "链接", Kind: KindDim}}
+	rows := [][]string{
+		{"1", "大模型发布会今晚举行", "129万", "https://e.com/1"},
+		{"2", "一个非常非常非常非常长的标题会被截断", "86万", "https://e.com/2"},
+		{"10", "ab", "", "https://e.com/10"},
+	}
+	var b bytes.Buffer
+	w := Writer{Out: &b, Format: Table, Width: 60}
+	if err := w.Write(Result{Columns: cols, Rows: rows, Footer: "\n用浏览器打开第 N 条：rebang open N"}); err != nil {
+		t.Fatal(err)
+	}
+	golden.Assert(t, "table", b.String())
+
+	c := ui.New(true)
+	b.Reset()
+	w.Theme = &c
+	_ = w.Write(Result{Columns: cols, Rows: rows})
+	if !strings.Contains(b.String(), "\x1b[") {
+		t.Fatal("彩色主题应输出颜色")
+	}
+	if got := golden.StripANSI(b.String()); got != RenderTable(cols, rows, 60) {
+		t.Fatalf("去掉颜色后应与无颜色表格一致\n%s\n%s", got, RenderTable(cols, rows, 60))
+	}
+}
+
+func TestPrettyOnlyForTable(t *testing.T) {
+	r := Result{Data: map[string]int{"a": 1}, Columns: []Column{{Title: "a"}}, Rows: [][]string{{"1"}},
+		Pretty: func(ui.Theme, int) string { return "卡片\n" }}
+	for f, want := range map[Format]string{Table: "卡片\n", JSON: "{\n  \"a\": 1\n}\n", MD: "| a |\n| --- |\n| 1 |\n"} {
+		var b bytes.Buffer
+		_ = Writer{Out: &b, Format: f}.Write(r)
+		if b.String() != want {
+			t.Errorf("%s: %q", f, b.String())
+		}
+	}
+}
+
+func TestWriteErrorTheme(t *testing.T) {
+	e := errs.New(errs.ExitNetwork, errs.CodeServer, "搜索服务暂不可用", "稍后再试").WithCause(errors.New("HTTP 503"))
+	var plain, themed bytes.Buffer
+	WriteError(&plain, e, false)
+	WriteErrorTheme(&themed, e, ui.Plain())
+	if plain.String() != themed.String() {
+		t.Fatalf("无颜色时应与原格式一致：%q %q", plain.String(), themed.String())
+	}
+	themed.Reset()
+	WriteErrorTheme(&themed, e, ui.New(true))
+	golden.Assert(t, "error_color", golden.StripANSI(themed.String()))
 }

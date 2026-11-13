@@ -20,7 +20,7 @@ func tokenNow() (string, credentials.Source) { return credentials.Token() }
 func newMenusCmd(a *App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "menus",
-		Short: "菜单列表",
+		Short: "列出菜单（综合、科技、娱乐…）",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			menus, err := a.Client().Menus(cmd.Context())
@@ -33,7 +33,7 @@ func newMenusCmd(a *App) *cobra.Command {
 			}
 			return a.Writer().Write(output.Result{
 				Data:    map[string]any{"menus": menus},
-				Columns: []output.Column{{Title: "ID"}, {Title: "KEY"}, {Title: "名称"}},
+				Columns: []output.Column{{Title: "ID", Kind: output.KindDim}, {Title: "KEY", Kind: output.KindAccent}, {Title: "名称"}},
 				Rows:    rows,
 				Footer:  footer(a, "查看菜单下的 Tab：rebang tabs --menu <ID>"),
 			})
@@ -74,7 +74,7 @@ func newTabsCmd(a *App) *cobra.Command {
 	var menu string
 	cmd := &cobra.Command{
 		Use:   "tabs --menu <id>",
-		Short: "菜单下的 Tab（含二级 Tab）",
+		Short: "列出菜单下的 Tab 与二级 Tab",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c := a.Client()
@@ -96,7 +96,7 @@ func newTabsCmd(a *App) *cobra.Command {
 			}
 			return a.Writer().Write(output.Result{
 				Data:    map[string]any{"menu_id": m.ID, "tabs": tabs},
-				Columns: []output.Column{{Title: "TAB"}, {Title: "名称"}, {Title: "二级 TAB", Shrink: true}},
+				Columns: []output.Column{{Title: "TAB", Kind: output.KindAccent}, {Title: "名称"}, {Title: "二级 TAB", Shrink: true, Kind: output.KindDim}},
 				Rows:    rows,
 				Footer:  footer(a, "查看榜单：rebang list --tab <TAB> [--sub-tab <二级 TAB>]"),
 			})
@@ -117,7 +117,7 @@ func newNodesCmd(a *App) *cobra.Command {
 	var menu, tab string
 	cmd := &cobra.Command{
 		Use:   "nodes --menu <id> | --tab <key>",
-		Short: "节点（榜单）列表",
+		Short: "列出可直接查看的榜单节点",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if (menu == "") == (tab == "") {
@@ -137,7 +137,7 @@ func newNodesCmd(a *App) *cobra.Command {
 				}
 				return a.Writer().Write(output.Result{
 					Data:    map[string]any{"tab": tab, "nodes": nodes},
-					Columns: []output.Column{{Title: "TAB"}, {Title: "SUB-TAB"}, {Title: "名称"}},
+					Columns: []output.Column{{Title: "TAB", Kind: output.KindDim}, {Title: "SUB-TAB", Kind: output.KindAccent}, {Title: "名称"}},
 					Rows:    rows,
 					Footer:  footer(a, "查看榜单：rebang list --tab <TAB> --sub-tab <SUB-TAB>"),
 				})
@@ -165,7 +165,7 @@ func nodesResult(a *App, data any, nodes []api.Node) output.Result {
 	}
 	return output.Result{
 		Data:    data,
-		Columns: []output.Column{{Title: "NODE"}, {Title: "名称"}, {Title: "说明", Shrink: true}},
+		Columns: []output.Column{{Title: "NODE", Kind: output.KindAccent}, {Title: "名称"}, {Title: "说明", Shrink: true, Kind: output.KindDim}},
 		Rows:    rows,
 		Footer:  footer(a, "查看榜单：rebang list --node <NODE>"),
 	}
@@ -334,8 +334,11 @@ func newListCmd(a *App) *cobra.Command {
 	var limit int
 	cmd := &cobra.Command{
 		Use:   "list --node <id> | --tab <key> [--sub-tab <key>]",
-		Short: "榜单",
-		Args:  cobra.NoArgs,
+		Short: "查看榜单",
+		Example: `  rebang list --tab weibo
+  rebang list --tab github --sub-tab daily -n 10
+  rebang list --node <NODE> -o md`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := t.validate(); err != nil {
 				return err
@@ -357,7 +360,7 @@ func newListCmd(a *App) *cobra.Command {
 			}
 			r := output.Result{
 				Data:    res,
-				Columns: []output.Column{{Title: "#"}, {Title: "标题", Max: 60, Shrink: true}, {Title: "热度", Max: 12}, {Title: "链接", Max: 60}},
+				Columns: []output.Column{{Title: "#", Kind: output.KindRank}, {Title: "标题", Max: 60, Shrink: true}, {Title: "热度", Max: 12, Kind: output.KindAccent}, {Title: "链接", Max: 60, Kind: output.KindDim}},
 				Rows:    rows,
 				Markdown: func() string {
 					var b strings.Builder

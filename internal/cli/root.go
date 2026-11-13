@@ -26,6 +26,12 @@ func NewRootCmd(a *App) *cobra.Command {
 
 退出码：0 成功，1 一般错误，2 参数错误，3 未登录或凭证失效，
 4 需要会员，5 被限流，6 网络错误，7 需要升级。`,
+		Example: `  rebang                         进入交互界面
+  rebang auth login              浏览器授权登录
+  rebang menus                   查看菜单
+  rebang list --tab weibo        查看微博热搜
+  rebang search 大模型           搜索热榜条目
+  rebang list --tab zhihu -o json | jq '.items[0]'`,
 		Version:       buildinfo.Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -66,6 +72,7 @@ func NewRootCmd(a *App) *cobra.Command {
 	add("query", newMenusCmd(a), newTabsCmd(a), newNodesCmd(a), newListCmd(a), newSearchCmd(a), newFollowingCmd(a), newOpenCmd(a))
 	add("account", newAuthCmd(a), newAccountCmd(a))
 	add("tool", newSkillCmd(a), newUpdateCmd(a), newDoctorCmd(a), newVersionCmd(a))
+	localizeHelp(root)
 	root.SetHelpCommandGroupID("tool")
 	root.SetCompletionCommandGroupID("tool")
 	return root

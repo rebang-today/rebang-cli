@@ -17,6 +17,19 @@ type Flow struct {
 	Now    func() time.Time
 	// OnCode 在拿到授权码后回调，用于展示授权码并打开浏览器。
 	OnCode func(code *api.DeviceCode, verifyURL string)
+	// OnSlowDown 在服务端要求降低轮询频率时回调，参数为调整后的间隔。
+	OnSlowDown func(interval time.Duration)
+}
+
+// DefaultLifetime 是服务端未返回 expires_in 时授权码的有效期。
+const DefaultLifetime = 10 * time.Minute
+
+// Lifetime 返回授权码的有效期。
+func Lifetime(dc *api.DeviceCode) time.Duration {
+	if d := time.Duration(dc.ExpiresIn) * time.Second; d > 0 {
+		return d
+	}
+	return DefaultLifetime
 }
 
 // VerificationURL 返回带授权码的确认页地址。
@@ -50,11 +63,7 @@ func (f *Flow) Run(ctx context.Context, req api.DeviceCodeRequest) (*api.DeviceT
 	if interval <= 0 {
 		interval = 5 * time.Second
 	}
-	expiresIn := time.Duration(dc.ExpiresIn) * time.Second
-	if expiresIn <= 0 {
-		expiresIn = 10 * time.Minute
-	}
-	deadline := f.Now().Add(expiresIn)
+	deadline := f.Now().Add(Lifetime(dc))
 	for {
 		if err := f.Sleep(ctx, interval); err != nil {
 			return nil, err
@@ -74,9 +83,12 @@ func (f *Flow) Run(ctx context.Context, req api.DeviceCodeRequest) (*api.DeviceT
 			continue
 		case api.OAuthSlowDown:
 			interval += 5 * time.Second
+			if f.OnSlowDown != nil {
+				f.OnSlowDown(interval)
+			}
 			continue
 		case api.OAuthAccessDenied:
-			return nil, errs.New(errs.ExitAuth, "access_denied", "授权已被拒绝", "如非本人操作请忽略；需要登录时重新运行 rebang auth login")
+			return nil, errs.New(errs.ExitAuth, "access_denied", "授权已在网页上被拒绝", "如果是误点，重新运行 rebang auth login 再试一次；如果不是你本人发起的登录，无需任何操作")
 		case api.OAuthExpired:
 			return nil, expired()
 		}
@@ -94,5 +106,5 @@ func (f *Flow) Run(ctx context.Context, req api.DeviceCodeRequest) (*api.DeviceT
 }
 
 func expired() error {
-	return errs.New(errs.ExitAuth, "expired_token", "授权码已过期", "重新运行 rebang auth login")
+	return errs.New(errs.ExitAuth, "expired_token", "授权码已过期，未在有效期内完成确认", "重新运行 rebang auth login 获取新的授权码")
 }

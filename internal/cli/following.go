@@ -46,7 +46,7 @@ func newFollowingCmd(a *App) *cobra.Command {
 			}
 			return a.Writer().Write(output.Result{
 				Data:    FollowingResult{Nodes: nodes, Tabs: tabs},
-				Columns: []output.Column{{Title: "类型"}, {Title: "ID"}, {Title: "名称"}, {Title: "查看"}},
+				Columns: []output.Column{{Title: "类型", Kind: output.KindDim}, {Title: "ID", Kind: output.KindAccent}, {Title: "名称"}, {Title: "查看", Kind: output.KindDim}},
 				Rows:    rows,
 			})
 		},

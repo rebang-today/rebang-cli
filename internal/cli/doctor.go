@@ -41,7 +41,7 @@ func newDoctorCmd(a *App) *cobra.Command {
 			}
 			if err := a.Writer().Write(output.Result{
 				Data:    map[string]any{"checks": checks, "ok": !failed},
-				Columns: []output.Column{{Title: ""}, {Title: "检查项"}, {Title: "结果", Shrink: true}},
+				Columns: []output.Column{{Title: "", Kind: output.KindStatus}, {Title: "检查项"}, {Title: "结果", Shrink: true}},
 				Rows:    rows,
 			}); err != nil {
 				return err
