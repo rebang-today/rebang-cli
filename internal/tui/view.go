@@ -19,7 +19,7 @@ var (
 	styleHeader   = lipgloss.NewStyle().Bold(true).Foreground(colorAccent)
 	styleDim      = lipgloss.NewStyle().Foreground(colorDim)
 	styleSel      = lipgloss.NewStyle().Background(colorSelBg).Bold(true)
-	styleSelBlur  = lipgloss.NewStyle().Foreground(colorAccent)
+	styleSelBlur  = lipgloss.NewStyle().Bold(true)
 	styleGroup    = lipgloss.NewStyle().Bold(true)
 	styleBar      = lipgloss.NewStyle().Background(colorBar)
 	styleError    = lipgloss.NewStyle().Foreground(colorError)
@@ -37,10 +37,14 @@ var (
 	styleMarker    = lipgloss.NewStyle().Foreground(colorAccent)
 	styleHover     = lipgloss.NewStyle().Background(colorHoverBg)
 	styleHoverText = lipgloss.NewStyle().Underline(true)
-	styleLeaf      = lipgloss.NewStyle()
 	styleKey       = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 	styleSource    = lipgloss.NewStyle().Foreground(colorAccent)
 	styleNotice    = lipgloss.NewStyle().Foreground(colorAccent).Background(colorNoticeBg)
+	// 菜单栏与子榜单条：当前项用品牌色底，其余为普通文字。
+	styleMenu   = lipgloss.NewStyle()
+	styleMenuOn = lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Background(colorTabBg)
+	styleTabOn  = lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Background(colorTabBg)
+	colorTabBg  = lipgloss.AdaptiveColor{Light: "#FFEDD5", Dark: "#431407"}
 
 	spinFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 )
@@ -53,18 +57,61 @@ func (m *model) bodyHeight() int {
 	return h
 }
 
+// listHeight 是右栏列表可见的行数（去掉标题行与子榜单条）。
+func (m *model) listHeight() int {
+	h := m.bodyHeight() - m.rightHead()
+	if h < 1 {
+		h = 1
+	}
+	return h
+}
+
+// rightHead 是右栏列表上方的行数：标题行，以及有子榜单时的子榜单条。
+func (m *model) rightHead() int {
+	if m.hasStrip() {
+		return 2
+	}
+	return 1
+}
+
+func (m *model) hasStrip() bool { return len(m.curSubs()) > 0 }
+
 func (m *model) wide() bool { return m.width >= wideMinWidth }
 
+// leftWidth 按当前菜单最长的来源名自适应，14～18 列。
 func (m *model) leftWidth() int {
-	w := m.width / 4
-	if w < 18 {
-		w = 18
+	w := 0
+	for _, s := range m.curSources() {
+		if x := runewidth.StringWidth(sourceLabel(s)); x > w {
+			w = x
+		}
 	}
-	if w > 30 {
-		w = 30
+	w += 3
+	if w < 14 {
+		w = 14
+	}
+	if w > 18 {
+		w = 18
 	}
 	return w
 }
+
+func sourceLabel(s source) string {
+	if s.kind == srcFollowing {
+		return "★ " + s.label
+	}
+	return s.label
+}
+
+// rightX 是右栏第一列的横坐标。
+func (m *model) rightX() int {
+	if !m.wide() {
+		return 0
+	}
+	return m.leftWidth() + 1
+}
+
+func (m *model) rightWidth() int { return m.width - m.rightX() }
 
 // paneAt 返回横坐标所在的栏。
 func (m *model) paneAt(x int) (focus, bool) {
@@ -104,81 +151,145 @@ func barText(st lipgloss.Style, s string) string { return onBar(st).Render(s) }
 
 func (m *model) spinner() string { return spinFrames[m.spin%len(spinFrames)] }
 
-// crumbs 返回标题栏的位置：一级 Tab › 二级 Tab，或搜索词。
-func (m *model) crumbs() []string {
-	if m.searchQ != "" {
-		return []string{"搜索“" + m.searchQ + "”"}
-	}
-	t := m.target
-	if t.title == "" {
-		return nil
-	}
-	if t.subTab != "" {
-		for _, d := range m.tree.data {
-			if d == nil {
-				continue
-			}
-			for _, tab := range d.tabs {
-				if tab.Key == t.tab {
-					return []string{tab.Name, t.title}
-				}
-			}
-		}
-	}
-	return []string{t.title}
+// span 是一行中可点击的一段，x0 ≤ x < x1。
+type span struct{ idx, x0, x1 int }
+
+// seg 是横向条（菜单栏、子榜单条）中的一项。
+type seg struct {
+	span
+	text string
 }
 
-func (m *model) headerLine() string {
-	brand := styleBrand.Render(" 今日热榜 ")
-	bw := lipgloss.Width(brand)
-	// 右侧信息从详细到简略依次尝试，优先保证位置完整显示。
-	var rights []string
-	rightStyle := styleDim
+// strip 把若干标签排成一行，放不下时以 cur 为中心截断，两端显示 ‹ ›。
+// 每项左右各留 1 列空白；x0 是第一列的横坐标。
+func strip(labels []string, cur, x0, avail int) (segs []seg, left, right bool) {
+	if len(labels) == 0 || avail <= 0 {
+		return nil, false, false
+	}
+	texts := make([]string, len(labels))
+	ws := make([]int, len(labels))
+	for i, l := range labels {
+		texts[i] = " " + l + " "
+		ws[i] = runewidth.StringWidth(texts[i])
+	}
+	cur = clampIdx(cur, len(labels))
+	lo, hi := window(ws, cur, avail)
+	left, right = lo > 0, hi < len(labels)-1
+	room := avail
+	if left {
+		room--
+	}
+	if right {
+		room--
+	}
+	if ws[cur] > room {
+		// 当前项自己都放不下：只显示截断后的当前项。
+		lo, hi = cur, cur
+		texts[cur] = pad(" "+runewidth.Truncate(labels[cur], room-2, "…")+" ", room)
+		ws[cur] = runewidth.StringWidth(texts[cur])
+	}
+	x := x0
+	if left {
+		x++
+	}
+	for i := lo; i <= hi; i++ {
+		segs = append(segs, seg{span{i, x, x + ws[i]}, texts[i]})
+		x += ws[i]
+	}
+	return segs, left, right
+}
+
+func (m *model) menuLabels() []string {
+	out := make([]string, len(m.menus))
+	for i, mn := range m.menus {
+		out[i] = mn.Name
+		if i < 9 {
+			out[i] = itoa(int64(i+1)) + " " + mn.Name
+		}
+	}
+	return out
+}
+
+const brandText = " 今日热榜 "
+
+// headerLayout 计算标题栏：菜单栏各项的位置与右侧的更新时间。
+func (m *model) headerLayout() (segs []seg, left, right bool, info string) {
+	bw := runewidth.StringWidth(brandText)
+	x0 := bw + 1
+	labels := m.menuLabels()
+	full := 0
+	for _, l := range labels {
+		full += runewidth.StringWidth(l) + 2
+	}
+	var infos []string
 	switch {
 	case m.loading:
-		rights, rightStyle = []string{m.spinner() + " 加载中", m.spinner()}, styleHeader
+		infos = []string{m.spinner() + " 加载中", m.spinner()}
 	case !m.updatedAt.IsZero():
-		upd := "更新于 " + m.updatedAt.Format("15:04")
-		if n := len(m.items); n > 0 {
-			rights = append(rights, itoa(int64(n))+" 条 · "+upd)
-		}
-		rights = append(rights, upd, m.updatedAt.Format("15:04"))
+		infos = []string{"更新于 " + m.updatedAt.Format("15:04"), m.updatedAt.Format("15:04")}
 	}
-	rights = append(rights, "")
-	cs := m.crumbs()
-	plain := strings.Join(cs, " › ")
-	right := ""
-	for _, r := range rights {
-		right = r
-		if bw+2+runewidth.StringWidth(plain)+2+runewidth.StringWidth(r)+1 <= m.width {
+	infos = append(infos, "")
+	// 右侧信息从详细到简略依次尝试，优先让菜单栏完整显示；
+	// 都放不下时保留最简略的信息，菜单栏截断。
+	info = infos[len(infos)-1]
+	for _, s := range infos {
+		if x0+full+2+runewidth.StringWidth(s)+1 <= m.width {
+			info = s
 			break
 		}
 	}
-	avail := m.width - bw - 2 - runewidth.StringWidth(right) - 3
-	crumb := ""
-	if len(cs) > 0 && avail > 2 {
-		if runewidth.StringWidth(plain) > avail {
-			crumb = barText(styleCrumb, runewidth.Truncate(plain, avail, "…"))
-		} else {
-			var b strings.Builder
-			for i, c := range cs {
-				if i > 0 {
-					b.WriteString(barText(styleDim, " › "))
-				}
-				st := styleDim
-				if i == len(cs)-1 {
-					st = styleCrumb
-				}
-				b.WriteString(barText(st, c))
-			}
-			crumb = b.String()
+	if x0+full+2+runewidth.StringWidth(info)+1 > m.width && len(infos) > 1 {
+		short := infos[len(infos)-2]
+		if m.width-x0-runewidth.StringWidth(short)-3 >= 20 {
+			info = short
 		}
 	}
-	gap := m.width - bw - 2 - lipgloss.Width(crumb) - runewidth.StringWidth(right) - 1
+	avail := m.width - x0 - 1
+	if info != "" {
+		avail -= runewidth.StringWidth(info) + 2
+	}
+	segs, left, right = strip(labels, m.menuIdx, x0, avail)
+	return segs, left, right, info
+}
+
+func (m *model) menuSpans() []span {
+	segs, _, _, _ := m.headerLayout()
+	out := make([]span, len(segs))
+	for i, s := range segs {
+		out[i] = s.span
+	}
+	return out
+}
+
+func (m *model) headerLine() string {
+	brand := styleBrand.Render(brandText)
+	segs, left, right, info := m.headerLayout()
+	var b strings.Builder
+	b.WriteString(brand)
+	b.WriteString(barText(styleBar, " "))
+	if left {
+		b.WriteString(barText(styleDim, "‹"))
+	}
+	for _, s := range segs {
+		if s.idx == m.menuIdx {
+			b.WriteString(styleMenuOn.Render(s.text))
+		} else {
+			b.WriteString(barText(styleMenu, s.text))
+		}
+	}
+	if right {
+		b.WriteString(barText(styleDim, "›"))
+	}
+	line := b.String()
+	infoStyle := styleDim
+	if m.loading {
+		infoStyle = styleHeader
+	}
+	gap := m.width - lipgloss.Width(line) - runewidth.StringWidth(info) - 1
 	if gap < 0 {
 		gap = 0
 	}
-	line := brand + barText(styleBar, "  ") + crumb + barText(styleBar, strings.Repeat(" ", gap)) + barText(rightStyle, right) + barText(styleBar, " ")
+	line += barText(styleBar, strings.Repeat(" ", gap)) + barText(infoStyle, info) + barText(styleBar, " ")
 	if w := lipgloss.Width(line); w < m.width {
 		line += barText(styleBar, strings.Repeat(" ", m.width-w))
 	}
@@ -192,13 +303,13 @@ func (m *model) bodyLines() []string {
 	}
 	if !m.wide() {
 		if m.focus == focusTree {
-			return m.treeLines(m.width, h)
+			return m.sourceLines(m.width, h)
 		}
-		return m.listLines(m.width, h)
+		return m.rightLines(m.width, h)
 	}
 	lw := m.leftWidth()
-	left := m.treeLines(lw, h)
-	right := m.listLines(m.width-lw-1, h)
+	left := m.sourceLines(lw, h)
+	right := m.rightLines(m.width-lw-1, h)
 	sep := styleSepColor.Render("│")
 	out := make([]string, h)
 	for i := range out {
@@ -207,49 +318,132 @@ func (m *model) bodyLines() []string {
 	return out
 }
 
-// marker 是行首的选中标记：当前栏选中时为橙色竖条。
+// marker 是行首的选中标记：焦点栏为橙色竖条，非焦点栏为灰色竖条。
 func marker(selected, focused bool) string {
-	if selected && focused {
+	switch {
+	case selected && focused:
 		return styleMarker.Render("▌")
+	case selected:
+		return styleDim.Render("▌")
 	}
 	return " "
 }
 
-func (m *model) treeLines(w, h int) []string {
-	out := make([]string, 0, h)
-	if len(m.rows) == 0 {
-		if m.menuErr != "" {
-			return centered([]string{styleError.Render("✗ 菜单加载失败"), "", keyHint("r", "重试")}, w, h)
-		}
-		return centered([]string{styleHeader.Render(m.spinner()) + styleDim.Render(" 正在加载菜单…")}, w, h)
+// sourceLines 渲染左栏：当前菜单的来源，平铺无层级。
+func (m *model) sourceLines(w, h int) []string {
+	mn, hasMenu := m.curMenu()
+	switch {
+	case len(m.menus) == 0 && m.menuErr != "":
+		return centered([]string{styleError.Render("✗ 菜单加载失败"), "", keyHint("r", "重试")}, w, h)
+	case !hasMenu:
+		return centered([]string{styleHeader.Render(m.spinner()) + styleDim.Render(" 正在加载…")}, w, h)
+	case m.menuErrs[mn.ID] != "":
+		return centered([]string{styleError.Render("✗ 加载失败"), "", keyHint("r", "重试")}, w, h)
+	case m.data[mn.ID] == nil:
+		return centered([]string{styleHeader.Render(m.spinner()) + styleDim.Render(" 正在加载…")}, w, h)
 	}
+	srcs := m.curSources()
 	focused := m.focus == focusTree
-	for i := m.treeOff; i < len(m.rows) && len(out) < h; i++ {
-		e := m.rows[i]
-		icon := "  "
-		if e.expandable {
-			icon = "▸ "
-			if e.expanded {
-				icon = "▾ "
-			}
-		}
-		sel := i == m.treeCur
-		text := pad(strings.Repeat("  ", e.level)+icon+e.label, w-1)
+	out := make([]string, 0, h)
+	for i := m.srcOff; i < len(srcs) && len(out) < h; i++ {
+		s := srcs[i]
+		label := runewidth.Truncate(sourceLabel(s), w-3, "…")
+		gap := strings.Repeat(" ", w-2-runewidth.StringWidth(label))
+		sel := i == m.srcCur
+		var text string
 		switch {
 		case sel && focused:
-			text = styleSel.Render(text)
+			text = styleSel.Render(" " + label + gap)
 		case sel:
-			text = styleSelBlur.Render(text)
+			text = styleSelBlur.Render(" "+label) + gap
 		case m.hovered(focusTree, i):
-			text = styleHover.Render(text)
-		case e.kind == kindMenu || e.kind == kindFollowing:
-			text = styleGroup.Render(text)
-		case !e.expandable && e.level > 0:
-			text = styleLeaf.Render(text)
+			text = " " + styleHoverText.Render(label) + gap
+		case s.kind == srcFollowing:
+			text = " " + styleGroup.Render(label) + gap
+		default:
+			text = " " + label + gap
 		}
 		out = append(out, marker(sel, focused)+text)
 	}
 	return fill(out, w, h)
+}
+
+// rightLines 渲染右栏：标题行、子榜单条（有时）与列表。
+func (m *model) rightLines(w, h int) []string {
+	out := []string{m.titleRow(w)}
+	if m.hasStrip() {
+		out = append(out, m.stripRow(w))
+	}
+	return append(out, m.listLines(w, h-len(out))...)
+}
+
+func (m *model) titleRow(w int) string {
+	title := ""
+	switch {
+	case m.searchQ != "":
+		title = "搜索“" + m.searchQ + "”"
+	default:
+		if s := m.curSource(); s.kind >= 0 {
+			title = s.label
+		}
+	}
+	count := ""
+	if n := len(m.items); n > 0 && !m.loading {
+		count = itoa(int64(n)) + " 条"
+	}
+	cw := runewidth.StringWidth(count)
+	room := w - 2 - cw - 2
+	if room < 4 {
+		count, cw, room = "", 0, w-2
+	}
+	title = runewidth.Truncate(title, room, "…")
+	gap := w - 1 - runewidth.StringWidth(title) - cw - 1
+	if gap < 0 {
+		gap = 0
+	}
+	return " " + styleCrumb.Render(title) + strings.Repeat(" ", gap) + styleDim.Render(count) + " "
+}
+
+func (m *model) stripSegs(x0, w int) ([]seg, bool, bool) {
+	subs := m.curSubs()
+	labels := make([]string, len(subs))
+	for i, s := range subs {
+		labels[i] = s.label
+	}
+	return strip(labels, m.subIdx, x0+1, w-2)
+}
+
+func (m *model) stripSpans(x0 int) []span {
+	segs, _, _ := m.stripSegs(x0, m.rightWidth())
+	out := make([]span, len(segs))
+	for i, s := range segs {
+		out[i] = s.span
+	}
+	return out
+}
+
+func (m *model) stripRow(w int) string {
+	segs, left, right := m.stripSegs(0, w)
+	var b strings.Builder
+	b.WriteString(" ")
+	if left {
+		b.WriteString(styleDim.Render("‹"))
+	}
+	for _, s := range segs {
+		if s.idx == clampIdx(m.subIdx, len(m.curSubs())) {
+			b.WriteString(styleTabOn.Render(s.text))
+		} else {
+			b.WriteString(styleDim.Render(s.text))
+		}
+	}
+	if right {
+		b.WriteString(styleDim.Render("›"))
+	}
+	line := b.String()
+	if lw := lipgloss.Width(line); lw < w {
+		line += strings.Repeat(" ", w-lw)
+	}
+	return line
 }
 
 // emptyState 返回右栏没有条目时的提示（图标、说明、下一步）。
@@ -271,6 +465,12 @@ func (m *model) emptyState(w int) []string {
 	case m.listErr != "":
 		lines := append([]string{styleError.Render("✗ 加载失败"), ""}, wrap(styleDim, m.listErr)...)
 		return append(lines, "", keyHint("r", "重试"))
+	case m.searchQ == "" && m.curSource().kind == srcFollowing && (!m.loggedIn || m.expired):
+		return []string{styleDim.Render("登录后可查看关注的榜单"), "", styleDim.Render("退出后运行 ") + styleKey.Render("rebang auth login")}
+	case m.searchQ == "" && m.curSource().kind == srcFollowing && !m.followReady:
+		return []string{styleHeader.Render(m.spinner()) + " 正在加载关注…"}
+	case m.searchQ == "" && m.curSource().kind == srcFollowing && len(m.following) == 0:
+		return []string{styleDim.Render("还没有关注的榜单"), "", styleDim.Render("可在网站上添加关注")}
 	case m.listNotice != "":
 		lines := []string{styleDim.Render(m.listNotice)}
 		if m.searchQ != "" {
@@ -278,11 +478,17 @@ func (m *model) emptyState(w int) []string {
 		}
 		return lines
 	case m.target.key() != "||" || m.searchQ != "":
-		return []string{styleDim.Render("暂无内容"), "", keyHint("r", "刷新")}
+		return []string{styleDim.Render("暂无内容"), "", keyHint("↓", "换一个榜单") + "   " + keyHint("r", "刷新")}
 	case m.menuErr != "":
 		return []string{styleDim.Render(m.menuErr)}
 	}
-	return []string{styleDim.Render("← 在左侧选择一个榜单"), "", keyHint("↑↓", "移动") + "   " + keyHint("↵", "打开")}
+	if mn, ok := m.curMenu(); ok && m.menuErrs[mn.ID] != "" {
+		return []string{styleDim.Render(m.menuErrs[mn.ID])}
+	}
+	if m.busy() {
+		return []string{styleHeader.Render(m.spinner()) + " 正在加载…"}
+	}
+	return []string{styleDim.Render("在左侧选择一个榜单"), "", keyHint("↑↓", "移动")}
 }
 
 // centered 把几行文字放到区域中间。
@@ -394,16 +600,37 @@ func barHint(key, label string) string {
 type hint struct{ key, label string }
 
 func (m *model) hints() []hint {
-	if !m.wide() {
-		if m.focus == focusTree {
-			return []hint{{"↵", "打开"}, {"tab", "列表"}, {"?", "帮助"}, {"q", "退出"}}
+	sub := m.hasStrip()
+	var hs []hint
+	switch {
+	case m.searchQ != "":
+		hs = []hint{{"↵", "打开"}, {"esc", "返回榜单"}, {"y", "复制"}, {"/", "搜索"}}
+	case m.focus == focusTree:
+		hs = []hint{{"↑↓", "榜单"}}
+		if sub {
+			hs = append(hs, hint{"←→", "切换"})
 		}
-		return []hint{{"↵", "打开"}, {"tab", "目录"}, {"/", "搜索"}, {"?", "帮助"}, {"q", "退出"}}
+		hs = append(hs, hint{"↵", "进入列表"}, hint{m.menuKeys(), "分类"}, hint{"/", "搜索"})
+	default:
+		hs = []hint{{"↵", "打开"}}
+		if sub {
+			hs = append(hs, hint{"←→", "切换"})
+		}
+		hs = append(hs, hint{"esc", "返回"}, hint{"y", "复制"}, hint{"/", "搜索"})
 	}
-	if m.searchQ != "" {
-		return []hint{{"↵", "打开"}, {"y", "复制"}, {"/", "搜索"}, {"esc", "返回"}, {"?", "帮助"}, {"q", "退出"}}
+	return append(hs, hint{"?", "帮助"}, hint{"q", "退出"})
+}
+
+// menuKeys 返回切换菜单的数字键范围，例如“1-8”。
+func (m *model) menuKeys() string {
+	n := len(m.menus)
+	if n > 9 {
+		n = 9
 	}
-	return []hint{{"/", "搜索"}, {"↵", "打开"}, {"y", "复制"}, {"r", "刷新"}, {"?", "帮助"}, {"q", "退出"}}
+	if n <= 1 {
+		return "[ ]"
+	}
+	return "1-" + itoa(int64(n))
 }
 
 func (m *model) statusLine() string {
@@ -491,9 +718,8 @@ var helpKeys = []struct {
 	group string
 	keys  []hint
 }{
-	{"浏览", []hint{{"↑ ↓  j k", "上下移动"}, {"← →  h l", "收起、展开或切换左右栏"}, {"tab", "切换左右栏"}, {"g  G", "跳到开头、结尾"}}},
-	{"操作", []hint{{"回车", "左栏展开或打开榜单；右栏在浏览器中打开"}, {"/", "搜索，Esc 返回榜单"}, {"y", "复制链接"}, {"r", "刷新"}}},
-	{"其他", []hint{{"?", "显示或关闭帮助"}, {"q", "退出"}}},
+	{"浏览", []hint{{"↑ ↓  j k", "在当前栏上下移动，左栏停下后自动加载"}, {"← →  h l", "切换子榜单"}, {"1-9  [ ]", "切换分类"}, {"tab", "切换左右栏"}, {"g G 空格", "开头、结尾、翻页"}}},
+	{"操作", []hint{{"回车", "左栏进入列表；列表中在浏览器打开"}, {"esc", "列表返回左栏；搜索时返回榜单"}, {"/", "搜索"}, {"y", "复制链接"}, {"r", "刷新"}, {"?  q", "帮助、退出"}}},
 }
 
 func (m *model) helpBody(w, h int) []string {
@@ -513,7 +739,7 @@ func (m *model) helpBody(w, h int) []string {
 		}
 		lines = append(lines, "")
 	}
-	lines = append(lines, styleDim.Render("鼠标：点击选中，双击打开，滚轮滚动"), "", styleDim.Render("按任意键返回"))
+	lines = append(lines, styleDim.Render("鼠标：点击分类、榜单、子榜单切换；双击条目打开；滚轮滚动"), "", styleDim.Render("按任意键返回"))
 	// 窗口不够高时去掉空行。
 	if len(lines) > h {
 		compact := lines[:0:0]

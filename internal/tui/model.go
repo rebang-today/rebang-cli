@@ -54,11 +54,24 @@ type model struct {
 	width, height int
 	focus         focus
 
-	tree     *tree
-	rows     []entry
-	treeCur  int
-	treeOff  int
-	autoPick bool
+	// 菜单与左栏。
+	menus       []api.Menu
+	menuIdx     int
+	data        map[int64]*menuData
+	menuLoading map[int64]bool
+	menuErrs    map[int64]string
+	following   []api.Node
+	followReady bool
+	srcCur      int
+	srcOff      int
+	subIdx      int
+	// 每个菜单上次的来源（visited 为 true 才有效）与每个来源上次的子榜单，只保存在内存中。
+	srcMem  map[int64]int
+	visited map[int64]bool
+	subMem  map[string]int
+	// 左栏移动后延迟加载右栏，debSeq 用于丢弃过期的延迟。
+	debSeq     int
+	debPending bool
 
 	target     listTarget
 	searchQ    string
@@ -98,7 +111,7 @@ type model struct {
 
 	// listErr 是右栏加载失败的原因，用于空状态展示。
 	listErr string
-	// menuErr 是菜单加载失败的原因，按 r 重试。
+	// menuErr 是菜单列表加载失败的原因，按 r 重试。
 	menuErr string
 }
 
@@ -139,9 +152,13 @@ type (
 		version string
 		err     error
 	}
-	tickMsg struct{}
-	spinMsg struct{}
+	tickMsg     struct{}
+	spinMsg     struct{}
+	debounceMsg struct{ seq int }
 )
+
+// debounce 是左栏移动后到加载右栏之间的等待时间，快速移动时只加载最后停下的榜单。
+const debounce = 150 * time.Millisecond
 
 func newModel(opt Options) *model {
 	if opt.Now == nil {
@@ -152,13 +169,17 @@ func newModel(opt Options) *model {
 	in.Placeholder = "输入关键词，回车搜索，Esc 取消"
 	in.CharLimit = 100
 	return &model{
-		opt:      opt,
-		tree:     newTree(),
-		loggedIn: opt.LoggedIn,
-		autoPick: true,
-		input:    in,
-		width:    100,
-		height:   30,
+		opt:         opt,
+		data:        map[int64]*menuData{},
+		menuLoading: map[int64]bool{},
+		menuErrs:    map[int64]string{},
+		srcMem:      map[int64]int{},
+		visited:     map[int64]bool{},
+		subMem:      map[string]int{},
+		loggedIn:    opt.LoggedIn,
+		input:       in,
+		width:       100,
+		height:      30,
 	}
 }
 
@@ -167,7 +188,6 @@ func ctx() (context.Context, context.CancelFunc) {
 }
 
 func (m *model) Init() tea.Cmd {
-	m.tree.loggedIn = m.loggedIn
 	cmds := []tea.Cmd{m.loadMenus(), m.tick()}
 	if m.loggedIn {
 		cmds = append(cmds, m.loadAccount(), m.loadFollowing())
@@ -189,6 +209,8 @@ func (m *model) loadMenus() tea.Cmd {
 }
 
 func (m *model) loadMenu(id int64) tea.Cmd {
+	m.menuLoading[id] = true
+	delete(m.menuErrs, id)
 	src := m.opt.Source
 	return func() tea.Msg {
 		c, cancel := ctx()
@@ -309,7 +331,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // busy 表示有正在进行的加载，需要转圈动画。
-func (m *model) busy() bool { return m.loading || (len(m.tree.menus) == 0 && m.menuErr == "") }
+func (m *model) busy() bool {
+	if m.loading || (len(m.menus) == 0 && m.menuErr == "") {
+		return true
+	}
+	if mn, ok := m.curMenu(); ok && m.menuLoading[mn.ID] {
+		return true
+	}
+	return m.curSource().kind == srcFollowing && m.loggedIn && !m.expired && !m.followReady
+}
 
 func (m *model) spinTick() tea.Cmd {
 	return tea.Tick(spinEvery, func(time.Time) tea.Msg { return spinMsg{} })
@@ -332,44 +362,49 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.menuErr = ""
-		m.tree.menus = msg.menus
-		m.rebuild()
-		if len(msg.menus) > 0 {
-			first := msg.menus[0].ID
-			m.tree.expanded[menuKey(first)] = true
-			m.rebuild()
-			return m, m.loadMenu(first)
+		m.menus = msg.menus
+		if len(msg.menus) == 0 {
+			return m, nil
 		}
-		return m, nil
+		m.menuIdx = clampIdx(m.menuIdx, len(msg.menus))
+		return m, m.enterMenu(m.menuIdx)
 	case menuDataMsg:
+		delete(m.menuLoading, msg.id)
 		if msg.err != nil {
+			m.menuErrs[msg.id] = errText(msg.err)
 			m.fail(msg.err)
 			return m, nil
 		}
-		m.tree.data[msg.id] = msg.data
-		m.rebuild()
-		if m.autoPick && m.target.key() == "||" && m.searchQ == "" {
-			for i, e := range m.rows {
-				if t, ok := e.target(); ok && e.menuID == msg.id {
-					m.autoPick = false
-					m.treeCur = i
-					m.focus = focusList
-					if e.kind == kindTab && e.expandable {
-						return m, m.activate(e)
-					}
-					return m, m.loadList(t)
-				}
-			}
+		if msg.data == nil {
+			msg.data = &menuData{}
+		}
+		m.data[msg.id] = msg.data
+		if mn, ok := m.curMenu(); ok && mn.ID == msg.id {
+			m.restorePos()
+			return m, m.loadCurrent()
 		}
 		return m, nil
 	case followingMsg:
-		if msg.err == nil {
-			m.tree.following = msg.nodes
-			m.rebuild()
-		} else if isAuth(msg.err) {
-			m.markExpired()
+		m.followReady = true
+		if msg.err != nil {
+			if isAuth(msg.err) {
+				m.markExpired()
+			}
+			return m, nil
+		}
+		m.following = msg.nodes
+		if src := m.curSource(); src.kind == srcFollowing {
+			m.subIdx = clampIdx(m.subIdx, len(msg.nodes))
+			if m.searchQ == "" && m.target.key() == "||" {
+				return m, m.loadCurrent()
+			}
 		}
 		return m, nil
+	case debounceMsg:
+		if msg.seq != m.debSeq || !m.debPending {
+			return m, nil
+		}
+		return m, m.loadCurrent()
 	case accountMsg:
 		if msg.err != nil {
 			if isAuth(msg.err) {
@@ -508,11 +543,6 @@ func (m *model) markExpired() {
 	m.flash("登录已失效，退出后运行 rebang auth login 重新登录", true)
 }
 
-func (m *model) rebuild() {
-	m.rows = m.tree.rows()
-	m.clamp()
-}
-
 func (m *model) fail(err error) {
 	if isAuth(err) {
 		m.markExpired()
@@ -536,6 +566,179 @@ func errText(err error) string {
 
 func isAuth(err error) bool { return errs.ExitCode(err) == errs.ExitAuth }
 
+// ---- 导航 ----
+
+func (m *model) curMenu() (api.Menu, bool) {
+	if m.menuIdx < 0 || m.menuIdx >= len(m.menus) {
+		return api.Menu{}, false
+	}
+	return m.menus[m.menuIdx], true
+}
+
+// curSources 返回当前菜单的左栏来源；菜单数据未加载时为 nil。
+func (m *model) curSources() []source {
+	mn, ok := m.curMenu()
+	if !ok || m.data[mn.ID] == nil {
+		return nil
+	}
+	return sources(m.data[mn.ID])
+}
+
+func (m *model) curSource() source {
+	srcs := m.curSources()
+	if len(srcs) == 0 {
+		return source{kind: -1}
+	}
+	return srcs[clampIdx(m.srcCur, len(srcs))]
+}
+
+// curSubs 返回当前来源的子榜单；搜索时不显示。
+func (m *model) curSubs() []subTab {
+	if m.searchQ != "" {
+		return nil
+	}
+	return m.curSource().subs(m.following)
+}
+
+func (m *model) memKey(s source) string {
+	mn, _ := m.curMenu()
+	if s.kind == srcFollowing {
+		return s.key()
+	}
+	return itoa(mn.ID) + "/" + s.key()
+}
+
+// savePos 记住当前菜单的来源与当前来源的子榜单。
+func (m *model) savePos() {
+	mn, ok := m.curMenu()
+	if !ok || m.data[mn.ID] == nil {
+		return
+	}
+	m.srcMem[mn.ID], m.visited[mn.ID] = m.srcCur, true
+	m.subMem[m.memKey(m.curSource())] = m.subIdx
+}
+
+// restorePos 恢复菜单上次的位置；第一次进入时选第一个榜单（跳过“我的关注”）。
+func (m *model) restorePos() {
+	mn, _ := m.curMenu()
+	srcs := m.curSources()
+	if m.visited[mn.ID] {
+		m.srcCur = m.srcMem[mn.ID]
+	} else {
+		m.srcCur = 0
+		if len(srcs) > 1 {
+			m.srcCur = 1
+		}
+	}
+	m.srcCur = clampIdx(m.srcCur, len(srcs))
+	m.subIdx = m.subMem[m.memKey(m.curSource())]
+	m.visited[mn.ID] = true
+	m.clamp()
+}
+
+// enterMenu 切换到第 i 个菜单并加载它上次停留的榜单，不改变焦点。
+func (m *model) enterMenu(i int) tea.Cmd {
+	if len(m.menus) == 0 {
+		return nil
+	}
+	i = clampIdx(i, len(m.menus))
+	m.savePos()
+	m.menuIdx, m.srcOff, m.hoverOK = i, 0, false
+	mn := m.menus[i]
+	if m.data[mn.ID] == nil {
+		m.clearList()
+		if m.menuLoading[mn.ID] {
+			return nil
+		}
+		return m.loadMenu(mn.ID)
+	}
+	m.restorePos()
+	return m.loadCurrent()
+}
+
+// clearList 清空右栏并丢弃尚未返回的请求。
+func (m *model) clearList() {
+	m.debSeq++
+	m.debPending = false
+	m.listSeq++
+	m.target, m.searchQ = listTarget{}, ""
+	m.items, m.listCur, m.listOff, m.access, m.listNotice, m.listErr = nil, 0, 0, nil, "", ""
+	m.loading = false
+}
+
+// loadCurrent 立即加载当前来源与子榜单对应的榜单。
+func (m *model) loadCurrent() tea.Cmd {
+	m.debSeq++
+	m.debPending = false
+	t, ok := m.curSource().target(m.subIdx, m.following)
+	if !ok {
+		m.clearList()
+		return nil
+	}
+	m.listErr = ""
+	return m.loadList(t)
+}
+
+// moveSource 移动左栏光标，停下 debounce 后再加载右栏；焦点留在左栏。
+func (m *model) moveSource(d int) tea.Cmd {
+	srcs := m.curSources()
+	if len(srcs) == 0 {
+		return nil
+	}
+	next := clampIdx(m.srcCur+d, len(srcs))
+	if next == m.srcCur {
+		m.clamp()
+		return nil
+	}
+	m.srcCur = next
+	m.subIdx = m.subMem[m.memKey(m.curSource())]
+	m.savePos()
+	m.clamp()
+	t, ok := m.curSource().target(m.subIdx, m.following)
+	if !ok {
+		return m.loadCurrent()
+	}
+	// 先清空右栏并丢弃旧请求，避免显示上一个榜单的内容。
+	m.listSeq++
+	m.items, m.listCur, m.listOff, m.access, m.listNotice, m.listErr = nil, 0, 0, nil, "", ""
+	m.target, m.searchQ, m.loading = t, "", true
+	m.debSeq++
+	m.debPending = true
+	seq := m.debSeq
+	return tea.Tick(debounce, func(time.Time) tea.Msg { return debounceMsg{seq} })
+}
+
+// selectSource 直接选中左栏第 i 项并立即加载（鼠标点击）。
+func (m *model) selectSource(i int) tea.Cmd {
+	srcs := m.curSources()
+	if i < 0 || i >= len(srcs) {
+		return nil
+	}
+	if i == m.srcCur && m.searchQ == "" && !m.debPending && m.target.key() != "||" {
+		return nil
+	}
+	m.srcCur = i
+	m.subIdx = m.subMem[m.memKey(m.curSource())]
+	m.savePos()
+	m.clamp()
+	return m.loadCurrent()
+}
+
+// setSub 切换到第 i 个子榜单并立即加载。
+func (m *model) setSub(i int) tea.Cmd {
+	subs := m.curSource().subs(m.following)
+	if len(subs) == 0 {
+		return nil
+	}
+	i = clampIdx(i, len(subs))
+	if i == m.subIdx && m.searchQ == "" && !m.debPending {
+		return nil
+	}
+	m.subIdx = i
+	m.savePos()
+	return m.loadCurrent()
+}
+
 // ---- 键盘 ----
 
 func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
@@ -557,6 +760,8 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 				return nil
 			}
 			m.focus = focusList
+			m.debSeq++
+			m.debPending = false
 			return m.runSearch(q)
 		}
 		var cmd tea.Cmd
@@ -571,6 +776,12 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 	m.message = ""
+	if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
+		if i := int(key[0] - '1'); i < len(m.menus) && i != m.menuIdx {
+			return m.enterMenu(i)
+		}
+		return nil
+	}
 	switch key {
 	case "q":
 		return tea.Quit
@@ -581,21 +792,38 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 		m.input.SetValue("")
 		return m.input.Focus()
 	case "esc":
-		if m.searchQ != "" && m.target.key() != "||" {
-			return m.loadList(m.target)
+		if m.searchQ != "" {
+			return m.loadCurrent()
 		}
-	case "tab":
+		m.focus = focusTree
+	case "tab", "shift+tab":
 		if m.focus == focusTree {
 			m.focus = focusList
 		} else {
 			m.focus = focusTree
 		}
+	case "[":
+		if len(m.menus) > 0 {
+			return m.enterMenu((m.menuIdx - 1 + len(m.menus)) % len(m.menus))
+		}
+	case "]":
+		if len(m.menus) > 0 {
+			return m.enterMenu((m.menuIdx + 1) % len(m.menus))
+		}
 	case "r":
 		m.flash("正在刷新…", false)
-		cmds := []tea.Cmd{m.refresh()}
-		if len(m.tree.menus) == 0 {
+		var cmds []tea.Cmd
+		mn, ok := m.curMenu()
+		switch {
+		case len(m.menus) == 0:
 			m.menuErr = ""
 			cmds = append(cmds, m.loadMenus())
+		case ok && m.data[mn.ID] == nil:
+			if !m.menuLoading[mn.ID] {
+				cmds = append(cmds, m.loadMenu(mn.ID))
+			}
+		default:
+			cmds = append(cmds, m.refresh())
 		}
 		if m.loggedIn && !m.expired {
 			cmds = append(cmds, m.loadAccount(), m.loadFollowing())
@@ -603,129 +831,50 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 		return tea.Batch(cmds...)
 	case "y":
 		return m.copySelected()
-	case "up", "k":
-		m.move(-1)
-	case "down", "j":
-		m.move(1)
-	case "pgup", "ctrl+b":
-		m.move(-m.bodyHeight())
-	case "pgdown", "ctrl+f", " ":
-		m.move(m.bodyHeight())
-	case "home", "g":
-		m.move(-1 << 20)
-	case "end", "G":
-		m.move(1 << 20)
 	case "left", "h":
-		return m.left()
+		return m.setSub(m.subIdx - 1)
 	case "right", "l":
-		return m.right()
+		return m.setSub(m.subIdx + 1)
+	case "up", "k":
+		return m.move(-1)
+	case "down", "j":
+		return m.move(1)
+	case "pgup", "ctrl+b":
+		return m.move(-m.paneHeight())
+	case "pgdown", "ctrl+f", " ":
+		return m.move(m.paneHeight())
+	case "home", "g":
+		return m.move(-1 << 20)
+	case "end", "G":
+		return m.move(1 << 20)
 	case "enter":
 		if m.focus == focusList {
 			return m.openSelected()
 		}
-		if e, ok := m.treeEntry(); ok {
-			return m.activate(e)
+		m.focus = focusList
+		if m.debPending {
+			return m.loadCurrent()
 		}
 	}
 	return nil
 }
 
-func (m *model) move(d int) {
+// move 在当前焦点栏内移动；左栏移动会延迟加载右栏。
+func (m *model) move(d int) tea.Cmd {
 	if m.focus == focusTree {
-		m.treeCur += d
-	} else {
-		m.listCur += d
+		return m.moveSource(d)
 	}
-	m.clamp()
-}
-
-func (m *model) left() tea.Cmd {
-	if m.focus == focusList {
-		m.focus = focusTree
-		return nil
-	}
-	e, ok := m.treeEntry()
-	if !ok {
-		return nil
-	}
-	if e.expandable && e.expanded {
-		m.tree.toggle(e)
-		m.rebuild()
-		return nil
-	}
-	for i := m.treeCur - 1; i >= 0; i-- {
-		if m.rows[i].level < e.level {
-			m.treeCur = i
-			break
-		}
-	}
+	m.listCur += d
 	m.clamp()
 	return nil
 }
 
-func (m *model) right() tea.Cmd {
-	if m.focus == focusList {
-		return nil
+// paneHeight 是当前焦点栏可见的行数，用于翻页。
+func (m *model) paneHeight() int {
+	if m.focus == focusTree {
+		return m.bodyHeight()
 	}
-	e, ok := m.treeEntry()
-	if !ok {
-		return nil
-	}
-	if e.expandable && !e.expanded {
-		return m.activate(e)
-	}
-	if _, isList := e.target(); isList {
-		return m.activate(e)
-	}
-	return nil
-}
-
-// activate 处理左栏条目的选择：展开分组，或加载榜单并聚焦右栏。
-func (m *model) activate(e entry) tea.Cmd {
-	switch e.kind {
-	case kindMenu, kindFollowing:
-		need := m.tree.toggle(e)
-		m.rebuild()
-		if need {
-			return m.loadMenu(e.menuID)
-		}
-		if e.kind == kindFollowing && m.tree.followOpen && len(m.tree.following) == 0 {
-			m.flash("还没有关注的榜单，可在网站上添加关注", false)
-		}
-		return nil
-	case kindTab:
-		if e.expandable {
-			if !e.expanded {
-				m.tree.toggle(e)
-				m.rebuild()
-			}
-			// 有二级 Tab 时默认打开第一个。
-			for i := m.treeCur + 1; i < len(m.rows); i++ {
-				c := m.rows[i]
-				if c.kind == kindSubTab && c.tab == e.tab && c.menuID == e.menuID {
-					m.treeCur = i
-					m.clamp()
-					t, _ := c.target()
-					m.focus = focusList
-					return m.loadList(t)
-				}
-			}
-			return nil
-		}
-	}
-	t, ok := e.target()
-	if !ok {
-		return nil
-	}
-	m.focus = focusList
-	return m.loadList(t)
-}
-
-func (m *model) treeEntry() (entry, bool) {
-	if m.treeCur < 0 || m.treeCur >= len(m.rows) {
-		return entry{}, false
-	}
-	return m.rows[m.treeCur], true
+	return m.listHeight()
 }
 
 func (m *model) selected() (row, bool) {
@@ -766,21 +915,77 @@ func (m *model) copySelected() tea.Cmd {
 
 // ---- 鼠标 ----
 
+// hit 描述屏幕上一个位置对应的元素。
+type hit struct {
+	what int // hitNone、hitMenu、hitSub、hitSource、hitItem
+	idx  int
+	pane focus
+}
+
+const (
+	hitNone = iota
+	hitMenu
+	hitSub
+	hitSource
+	hitItem
+)
+
+// hitTest 把鼠标坐标换算为界面元素，与 View 的布局保持一致。
+func (m *model) hitTest(x, y int) hit {
+	if y == 0 {
+		for _, sp := range m.menuSpans() {
+			if x >= sp.x0 && x < sp.x1 {
+				return hit{what: hitMenu, idx: sp.idx}
+			}
+		}
+		return hit{}
+	}
+	pane, ok := m.paneAt(x)
+	if !ok || y > m.bodyHeight() {
+		return hit{}
+	}
+	if pane == focusTree {
+		idx := m.srcOff + y - 1
+		if idx < len(m.curSources()) {
+			return hit{what: hitSource, idx: idx, pane: pane}
+		}
+		return hit{pane: pane}
+	}
+	x0 := m.rightX()
+	if m.hasStrip() && y == 2 {
+		for _, sp := range m.stripSpans(x0) {
+			if x >= sp.x0 && x < sp.x1 {
+				return hit{what: hitSub, idx: sp.idx, pane: pane}
+			}
+		}
+		return hit{pane: pane}
+	}
+	idx := m.listOff + y - 1 - m.rightHead()
+	if y-1 >= m.rightHead() && idx < len(m.items) {
+		return hit{what: hitItem, idx: idx, pane: pane}
+	}
+	return hit{pane: pane}
+}
+
 func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 	if m.help || m.searching {
 		return nil
 	}
-	pane, ok := m.paneAt(ev.X)
+	h := m.hitTest(ev.X, ev.Y)
 	if ev.Action == tea.MouseActionMotion && ev.Button == tea.MouseButtonNone {
-		m.setHover(pane, ok, ev.Y-1)
-		return nil
-	}
-	if !ok {
+		m.hoverOK = false
+		if h.what == hitSource || h.what == hitItem {
+			m.hoverOK, m.hoverPane, m.hoverIdx = true, h.pane, h.idx
+		}
 		return nil
 	}
 	switch ev.Button {
 	case tea.MouseButtonWheelUp, tea.MouseButtonWheelDown:
-		if ev.Action != tea.MouseActionPress {
+		if ev.Action != tea.MouseActionPress || ev.Y == 0 {
+			return nil
+		}
+		pane, ok := m.paneAt(ev.X)
+		if !ok {
 			return nil
 		}
 		d := 3
@@ -796,47 +1001,28 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 	default:
 		return nil
 	}
-	y := ev.Y - 1 // 首行是标题栏
-	if y < 0 || y >= m.bodyHeight() {
-		return nil
-	}
 	now := m.opt.Now()
-	if pane == focusTree {
-		idx := m.treeOff + y
-		if idx >= len(m.rows) {
-			return nil
+	switch h.what {
+	case hitMenu:
+		if h.idx != m.menuIdx {
+			return m.enterMenu(h.idx)
 		}
-		m.focus, m.treeCur = focusTree, idx
-		m.lastClickAt, m.lastClickIdx, m.lastClickPan = now, idx, pane
-		return m.activate(m.rows[idx])
-	}
-	idx := m.listOff + y
-	if idx >= len(m.items) {
-		return nil
-	}
-	double := m.lastClickPan == focusList && m.lastClickIdx == idx && now.Sub(m.lastClickAt) <= doubleClick
-	m.focus, m.listCur = focusList, idx
-	m.lastClickAt, m.lastClickIdx, m.lastClickPan = now, idx, pane
-	if double {
-		m.lastClickAt = time.Time{}
-		return m.openSelected()
+	case hitSub:
+		return m.setSub(h.idx)
+	case hitSource:
+		m.focus = focusTree
+		m.lastClickAt, m.lastClickIdx, m.lastClickPan = now, h.idx, focusTree
+		return m.selectSource(h.idx)
+	case hitItem:
+		double := m.lastClickPan == focusList && m.lastClickIdx == h.idx && now.Sub(m.lastClickAt) <= doubleClick
+		m.focus, m.listCur = focusList, h.idx
+		m.lastClickAt, m.lastClickIdx, m.lastClickPan = now, h.idx, focusList
+		if double {
+			m.lastClickAt = time.Time{}
+			return m.openSelected()
+		}
 	}
 	return nil
-}
-
-// setHover 记录鼠标悬停的行，y 是相对正文区域的行号。
-func (m *model) setHover(pane focus, ok bool, y int) {
-	m.hoverOK = false
-	if !ok || y < 0 || y >= m.bodyHeight() {
-		return
-	}
-	idx, n := m.listOff+y, len(m.items)
-	if pane == focusTree {
-		idx, n = m.treeOff+y, len(m.rows)
-	}
-	if idx < n {
-		m.hoverOK, m.hoverPane, m.hoverIdx = true, pane, idx
-	}
 }
 
 func (m *model) hovered(pane focus, idx int) bool {
@@ -845,12 +1031,12 @@ func (m *model) hovered(pane focus, idx int) bool {
 
 func (m *model) scroll(pane focus, d int) {
 	m.hoverOK = false
-	h := m.bodyHeight()
 	if pane == focusTree {
-		m.treeOff = clampOff(m.treeOff+d, len(m.rows), h)
-		m.treeCur = clampInto(m.treeCur, m.treeOff, h, len(m.rows))
+		h, n := m.bodyHeight(), len(m.curSources())
+		m.srcOff = clampOff(m.srcOff+d, n, h)
 		return
 	}
+	h := m.listHeight()
 	m.listOff = clampOff(m.listOff+d, len(m.items), h)
 	m.listCur = clampInto(m.listCur, m.listOff, h, len(m.items))
 }
@@ -883,9 +1069,8 @@ func clampInto(cur, off, h, n int) int {
 
 // clamp 保证光标合法且可见。
 func (m *model) clamp() {
-	h := m.bodyHeight()
-	m.treeCur, m.treeOff = fit(m.treeCur, m.treeOff, len(m.rows), h)
-	m.listCur, m.listOff = fit(m.listCur, m.listOff, len(m.items), h)
+	m.srcCur, m.srcOff = fit(m.srcCur, m.srcOff, len(m.curSources()), m.bodyHeight())
+	m.listCur, m.listOff = fit(m.listCur, m.listOff, len(m.items), m.listHeight())
 }
 
 func fit(cur, off, n, h int) (int, int) {
