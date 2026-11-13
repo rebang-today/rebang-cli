@@ -1,0 +1,8 @@
+.DS_Store
+/dist/
+/bin/
+/rebang
+/rebang.exe
+*.test
+*.out
+coverage.*
