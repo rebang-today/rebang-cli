@@ -2,11 +2,18 @@
 package main
 
 import (
-	"fmt"
+	"context"
+	"os"
+	"os/signal"
 
-	"github.com/rebang-today/rebang-cli/internal/buildinfo"
+	"github.com/rebang-today/rebang-cli/internal/cli"
 )
 
 func main() {
-	fmt.Println("rebang", buildinfo.Version)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	app := cli.NewApp()
+	app.RunTUI = runTUI
+	code := cli.ExecuteContext(ctx, app, os.Args[1:])
+	stop()
+	os.Exit(code)
 }
