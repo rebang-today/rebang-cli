@@ -65,7 +65,7 @@ func NewRootCmd(a *App) *cobra.Command {
 	}
 	add("query", newMenusCmd(a), newTabsCmd(a), newNodesCmd(a), newListCmd(a), newSearchCmd(a), newFollowingCmd(a), newOpenCmd(a))
 	add("account", newAuthCmd(a), newAccountCmd(a))
-	add("tool", newUpdateCmd(a), newDoctorCmd(a), newVersionCmd(a))
+	add("tool", newSkillCmd(a), newUpdateCmd(a), newDoctorCmd(a), newVersionCmd(a))
 	root.SetHelpCommandGroupID("tool")
 	root.SetCompletionCommandGroupID("tool")
 	return root

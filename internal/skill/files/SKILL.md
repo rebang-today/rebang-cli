@@ -1,0 +1,82 @@
+---
+name: rebang
+description: 查询今日热榜（rebang.today）的实时热榜与历史热点。当用户想知道某个平台（微博、知乎、抖音、B 站、GitHub 等）现在的热门内容、某个话题最近是否上过热榜、某件事在各平台的讨论热度，或需要基于热榜做舆情与话题研究时使用。通过本机安装的 rebang 命令行获取结构化结果。
+---
+
+# rebang：今日热榜命令行
+
+适用版本：rebang {{VERSION}}。本 skill 随 rebang 程序一起发布，`rebang update` 升级后会自动同步；如果 `rebang version` 显示的版本与上面不一致，运行 `rebang skill install` 重新安装。
+
+## 调用约定
+
+- 在 Agent 中调用时输出默认为 JSON（标准输出不是终端）。需要时显式加 `-o json`；需要给用户看的列表可用 `-o md`。
+- 结果写在标准输出；错误写在标准错误，格式为 `{"error":{"code":"…","message":"…","hint":"…"}}`。
+- 根据退出码判断结果，不要解析错误文案：
+
+| 退出码 | code | 含义与处理 |
+| --- | --- | --- |
+| 0 | | 成功 |
+| 1 | `general_error` 等 | 一般错误，把 message 告诉用户 |
+| 2 | `invalid_argument` | 参数错误，检查命令与 ID |
+| 3 | `unauthorized` | 未登录或凭证失效：请用户在终端运行 `rebang auth login`，不要替用户登录 |
+| 4 | `membership_required` | 需要会员：如实告知用户，不要编造结果 |
+| 5 | `rate_limited` | 被限流：稍等再试，减少调用次数 |
+| 6 | `network_error` / `server_error` | 网络或服务端错误：可重试一次 |
+| 7 | `upgrade_required` | 版本过低：请用户运行 `rebang update` |
+
+## 浏览热榜
+
+热榜按 菜单 → Tab → 节点（榜单）三级组织。
+
+```bash
+rebang menus                         # 菜单列表：id、menu_key、menu_name
+rebang tabs --menu <菜单ID或KEY>      # 菜单下的 Tab，child 为二级 Tab
+rebang nodes --menu <菜单ID或KEY>     # 菜单下的节点：node_id、name
+rebang nodes --tab <TAB_KEY>          # 一级 Tab 下的二级 Tab
+rebang list --node <NODE_ID> -n 20    # 某个节点的榜单
+rebang list --tab weibo -n 20         # 也可直接用 Tab（可加 --sub-tab）
+```
+
+`list` 的 JSON：`items[]` 中每项有 `rank`、`title`、`url`、`heat`（可能为空）、`desc`、`published_at`。
+`content_access.mode` 为 `preview` 表示非会员只能看到前 `preview_limit` 条。
+
+不知道 Tab KEY 时，先 `rebang menus`，再 `rebang tabs --menu <id>`。
+
+## 搜索
+
+```bash
+rebang search "关键词"                       # 默认：普通用户当天，会员最近一年
+rebang search "关键词" --days 7 -n 50        # 最近 7 天（会员）
+rebang search "关键词" --source weibo,zhihu  # 限定来源 Tab KEY（会员）
+rebang search "关键词" --sort latest         # 按时间排序（会员）
+```
+
+JSON：`total`、`has_more`、`items[]`（`title`、`url`、`snippet`、`source`、`source_name`、`first_seen_at`、`last_seen_at`）。
+`--limit` 最大 200。普通用户使用 `--days`（大于 1）、`--source`、`--sort latest` 会返回退出码 4。
+
+做话题研究、需要多次搜索并汇总时，按 [references/research.md](references/research.md) 的流程进行。
+
+## 账号
+
+```bash
+rebang auth status    # 是否登录；未登录退出码 3
+rebang account        # 账号与会员状态：is_member、member_expires_at
+rebang following      # 我的关注：nodes[] 与 tabs[]（需登录）
+```
+
+凭证可以通过环境变量 `REBANG_TOKEN` 注入。不要读取、打印或保存凭证文件内容。
+
+## 其他
+
+```bash
+rebang open <链接>                 # 用浏览器打开
+rebang open 3 --node <ID> --print  # 只输出榜单第 3 条的链接
+rebang doctor                      # 环境诊断
+rebang version
+```
+
+## 注意
+
+- 引用热榜内容时附上原链接（`url`），不要编造标题、热度或链接。
+- 热榜实时变化，回答中注明查询时间。
+- 不要在循环中高频调用；同一查询结果在几分钟内可以复用。
