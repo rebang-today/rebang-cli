@@ -6,6 +6,7 @@ import (
 	"github.com/rebang-today/rebang-cli/internal/buildinfo"
 	"github.com/rebang-today/rebang-cli/internal/errs"
 	"github.com/rebang-today/rebang-cli/internal/output"
+	"github.com/rebang-today/rebang-cli/internal/update"
 )
 
 // 不受 min_version 限制的命令：升级自身、查看版本与诊断必须始终可用。
@@ -35,6 +36,11 @@ func NewRootCmd(a *App) *cobra.Command {
 				return err
 			}
 			a.format = f
+			if !exempt(cmd) {
+				if err := update.EnforceMinVersion(buildinfo.Version); err != nil {
+					return err
+				}
+			}
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -59,7 +65,7 @@ func NewRootCmd(a *App) *cobra.Command {
 	}
 	add("query", newMenusCmd(a), newTabsCmd(a), newNodesCmd(a), newListCmd(a), newSearchCmd(a), newFollowingCmd(a), newOpenCmd(a))
 	add("account", newAuthCmd(a), newAccountCmd(a))
-	add("tool", newDoctorCmd(a), newVersionCmd(a))
+	add("tool", newUpdateCmd(a), newDoctorCmd(a), newVersionCmd(a))
 	root.SetHelpCommandGroupID("tool")
 	root.SetCompletionCommandGroupID("tool")
 	return root
@@ -81,5 +87,3 @@ func requireLogin() error {
 	}
 	return nil
 }
-
-var _ = exempt
