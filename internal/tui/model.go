@@ -86,6 +86,20 @@ type model struct {
 	lastClickAt  time.Time
 	lastClickIdx int
 	lastClickPan focus
+
+	// 鼠标悬停的行，hoverOK 为 false 表示没有悬停。
+	hoverOK   bool
+	hoverPane focus
+	hoverIdx  int
+
+	// 加载动画。
+	spin     int
+	spinning bool
+
+	// listErr 是右栏加载失败的原因，用于空状态展示。
+	listErr string
+	// menuErr 是菜单加载失败的原因，按 r 重试。
+	menuErr string
 }
 
 // 消息类型。
@@ -126,6 +140,7 @@ type (
 		err     error
 	}
 	tickMsg struct{}
+	spinMsg struct{}
 )
 
 func newModel(opt Options) *model {
@@ -273,7 +288,34 @@ func (m *model) refresh() tea.Cmd {
 
 // ---- 更新 ----
 
+const spinEvery = 100 * time.Millisecond
+
+// Update 处理消息；加载期间驱动转圈动画。
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if _, ok := msg.(spinMsg); ok {
+		m.spin++
+		if !m.busy() {
+			m.spinning = false
+			return m, nil
+		}
+		return m, m.spinTick()
+	}
+	next, cmd := m.update(msg)
+	if m.busy() && !m.spinning {
+		m.spinning = true
+		cmd = tea.Batch(cmd, m.spinTick())
+	}
+	return next, cmd
+}
+
+// busy 表示有正在进行的加载，需要转圈动画。
+func (m *model) busy() bool { return m.loading || (len(m.tree.menus) == 0 && m.menuErr == "") }
+
+func (m *model) spinTick() tea.Cmd {
+	return tea.Tick(spinEvery, func(time.Time) tea.Msg { return spinMsg{} })
+}
+
+func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -285,9 +327,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.onMouse(msg)
 	case menusMsg:
 		if msg.err != nil {
+			m.menuErr = errText(msg.err)
 			m.fail(msg.err)
 			return m, nil
 		}
+		m.menuErr = ""
 		m.tree.menus = msg.menus
 		m.rebuild()
 		if len(msg.menus) > 0 {
@@ -342,9 +386,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		if msg.err != nil && (msg.res == nil || len(msg.res.Items) == 0) {
 			m.items = nil
+			m.listErr = errText(msg.err)
 			m.fail(msg.err)
 			return m, nil
 		}
+		m.listErr = ""
 		m.setList(msg.res)
 		return m, nil
 	case searchMsg:
@@ -354,9 +400,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		if msg.err != nil {
 			m.items = nil
+			m.listErr = errText(msg.err)
 			m.fail(msg.err)
 			return m, nil
 		}
+		m.listErr = ""
 		m.setSearch(msg.res)
 		return m, nil
 	case updateMsg:
@@ -545,6 +593,10 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 	case "r":
 		m.flash("正在刷新…", false)
 		cmds := []tea.Cmd{m.refresh()}
+		if len(m.tree.menus) == 0 {
+			m.menuErr = ""
+			cmds = append(cmds, m.loadMenus())
+		}
 		if m.loggedIn && !m.expired {
 			cmds = append(cmds, m.loadAccount(), m.loadFollowing())
 		}
@@ -719,6 +771,10 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 		return nil
 	}
 	pane, ok := m.paneAt(ev.X)
+	if ev.Action == tea.MouseActionMotion && ev.Button == tea.MouseButtonNone {
+		m.setHover(pane, ok, ev.Y-1)
+		return nil
+	}
 	if !ok {
 		return nil
 	}
@@ -768,7 +824,27 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 	return nil
 }
 
+// setHover 记录鼠标悬停的行，y 是相对正文区域的行号。
+func (m *model) setHover(pane focus, ok bool, y int) {
+	m.hoverOK = false
+	if !ok || y < 0 || y >= m.bodyHeight() {
+		return
+	}
+	idx, n := m.listOff+y, len(m.items)
+	if pane == focusTree {
+		idx, n = m.treeOff+y, len(m.rows)
+	}
+	if idx < n {
+		m.hoverOK, m.hoverPane, m.hoverIdx = true, pane, idx
+	}
+}
+
+func (m *model) hovered(pane focus, idx int) bool {
+	return m.hoverOK && m.hoverPane == pane && m.hoverIdx == idx
+}
+
 func (m *model) scroll(pane focus, d int) {
+	m.hoverOK = false
 	h := m.bodyHeight()
 	if pane == focusTree {
 		m.treeOff = clampOff(m.treeOff+d, len(m.rows), h)

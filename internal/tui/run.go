@@ -41,7 +41,7 @@ func Run(a *cli.App) error {
 		Copy:       clipboard.WriteAll,
 		Now:        a.Now,
 	}
-	p := tea.NewProgram(newModel(opt), tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(newModel(opt), tea.WithAltScreen(), tea.WithMouseAllMotion())
 	_, err = p.Run()
 	return err
 }
