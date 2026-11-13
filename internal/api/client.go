@@ -31,6 +31,15 @@ const (
 	codeIPBanned     = 1020
 	codePause        = 1023
 	codeSearchDown   = 1032
+
+	// CLI 设备授权与 Token 相关业务码，见服务端 docs/cli-auth.md。
+	codeDevicePending   = 1061
+	codeDeviceSlowDown  = 1062
+	codeDeviceDenied    = 1063
+	codeDeviceExpired   = 1064
+	codeCLITokenExpired = 1066
+	codeCLITokenRevoked = 1067
+	codeCLITokenDenied  = 1068
 )
 
 // Invocation 标记调用方式（D-33），供服务端区分人与 Agent 流量。
@@ -162,13 +171,21 @@ func MapError(err error) error {
 	}
 	msg := a.Msg
 	switch {
+	case a.Code == codeCLITokenExpired:
+		return errs.Unauthorized("登录已过期").WithCause(a)
+	case a.Code == codeCLITokenRevoked:
+		return errs.Unauthorized("该设备的登录已被吊销").WithCause(a)
 	case a.Status == http.StatusUnauthorized || a.Code == codeUnauthorized:
 		return errs.Unauthorized("未登录或登录已失效（" + msg + "）").WithCause(a)
 	case a.Code == codeUserNotVip:
 		return errs.Membership("该功能需要会员").WithCause(a)
 	case a.Status == http.StatusTooManyRequests || a.Code == codeTooMany:
 		return errs.New(errs.ExitRateLimited, errs.CodeRateLimited, "请求过于频繁", "稍后再试").WithCause(a)
-	case a.Code == codeUserBanned || a.Code == codeForbidden || a.Code == codeIPBanned:
+	case a.Code == codeCLITokenDenied:
+		return errs.New(errs.ExitGeneral, errs.CodeForbidden, "命令行登录无法使用该功能（"+msg+"）", "请在网站上操作").WithCause(a)
+	case a.Code == codeForbidden:
+		return errs.New(errs.ExitGeneral, errs.CodeForbidden, "账号已被停用（"+msg+"）", "如有疑问请在网站反馈").WithCause(a)
+	case a.Code == codeUserBanned || a.Code == codeIPBanned:
 		return errs.New(errs.ExitGeneral, errs.CodeForbidden, "账号或网络已被限制访问（"+msg+"）", "如有疑问请在网站反馈").WithCause(a)
 	case a.Code == codeParams:
 		return errs.New(errs.ExitUsage, errs.CodeInvalidArgument, "参数错误（"+msg+"）", "检查 ID 是否正确，运行 rebang <命令> --help 查看用法").WithCause(a)

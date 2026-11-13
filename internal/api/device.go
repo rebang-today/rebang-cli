@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 )
 
@@ -57,15 +58,26 @@ func (c *Client) PollDeviceToken(ctx context.Context, deviceCode string) (*Devic
 
 // Logout 吊销当前 Token。
 func (c *Client) Logout(ctx context.Context) error {
-	return c.do(ctx, http.MethodPost, "/cli/auth/logout", nil, struct{}{}, nil)
+	return c.do(ctx, http.MethodPost, "/cli/auth/logout", nil, nil, nil)
 }
 
-// OAuthErrorOf 从错误中提取 RFC 8628 错误码。兼容三种写法：
-// 顶层 error 字段、data.error 字段、或 msg 直接为错误码。
+// deviceCodes 是服务端轮询接口返回的业务码与 RFC 8628 错误的对应关系。
+var deviceCodes = map[int]string{
+	codeDevicePending:  OAuthPending,
+	codeDeviceSlowDown: OAuthSlowDown,
+	codeDeviceDenied:   OAuthAccessDenied,
+	codeDeviceExpired:  OAuthExpired,
+}
+
+// OAuthErrorOf 从错误中提取 RFC 8628 错误码。优先识别服务端业务码 1061 ~ 1064，
+// 同时兼容顶层 error 字段、data.error 字段、或 msg 直接为错误码的写法。
 func OAuthErrorOf(err error) string {
-	a, ok := err.(*APIError)
-	if !ok {
+	var a *APIError
+	if !errors.As(err, &a) {
 		return ""
+	}
+	if e, ok := deviceCodes[a.Code]; ok {
+		return e
 	}
 	if a.OAuthError != "" {
 		return a.OAuthError

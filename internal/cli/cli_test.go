@@ -116,7 +116,7 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/v1/cli/auth/device/token":
 		f.polls++
 		if f.polls < 2 {
-			fail(400, 1100, "authorization_pending")
+			fail(400, 1061, "等待在网页上确认授权。")
 			return
 		}
 		ok(map[string]any{"access_token": f.token, "token_type": "Bearer"})

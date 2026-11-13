@@ -40,7 +40,8 @@ func fakeServer(t *testing.T, script []string) (*httptest.Server, *int32) {
 				return
 			}
 			w.WriteHeader(400)
-			json.NewEncoder(w).Encode(map[string]any{"code": 1100, "msg": step})
+			codes := map[string]int{"authorization_pending": 1061, "slow_down": 1062, "access_denied": 1063, "expired_token": 1064}
+			json.NewEncoder(w).Encode(map[string]any{"code": codes[step], "msg": "等待在网页上确认授权。"})
 		}
 	}))
 	return srv, &polls

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -138,6 +139,45 @@ func TestOAuthErrorExtraction(t *testing.T) {
 		srv.Close()
 		if OAuthErrorOf(err) != OAuthPending {
 			t.Errorf("body %s: got %q (%v)", body, OAuthErrorOf(err), err)
+		}
+	}
+}
+
+// TestDeviceErrorCodes 使用服务端真实的返回格式：HTTP 400 + {code, msg}，msg 为中文。
+func TestDeviceErrorCodes(t *testing.T) {
+	cases := map[int]string{1061: OAuthPending, 1062: OAuthSlowDown, 1063: OAuthAccessDenied, 1064: OAuthExpired}
+	for code, want := range cases {
+		code := code
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(400)
+			fmt.Fprintf(w, `{"code":%d,"msg":"等待在网页上确认授权。"}`, code)
+		}))
+		_, err := New(srv.URL, "", InvocationPipe).PollDeviceToken(context.Background(), "dc")
+		srv.Close()
+		if got := OAuthErrorOf(err); got != want {
+			t.Errorf("code %d: got %q, want %q (%v)", code, got, want, err)
+		}
+	}
+	if OAuthErrorOf(&APIError{Status: 400, Code: 1001}) != "" {
+		t.Error("其他业务码不应识别为 OAuth 错误")
+	}
+}
+
+func TestCLITokenErrors(t *testing.T) {
+	cases := []struct {
+		status, code, exit int
+	}{
+		{401, 1066, errs.ExitAuth},
+		{401, 1067, errs.ExitAuth},
+		{403, 1068, errs.ExitGeneral},
+		{403, 1005, errs.ExitGeneral},
+		{429, 1014, errs.ExitRateLimited},
+		{503, 1000, errs.ExitNetwork},
+	}
+	for _, c := range cases {
+		err := MapError(&APIError{Status: c.status, Code: c.code, Msg: "x"})
+		if got := errs.ExitCode(err); got != c.exit {
+			t.Errorf("%d/%d: exit %d, want %d (%v)", c.status, c.code, got, c.exit, err)
 		}
 	}
 }
