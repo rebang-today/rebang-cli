@@ -1104,7 +1104,7 @@ func TestHints(t *testing.T) {
 		t.Fatalf("左栏提示：%q", st())
 	}
 	key(t, m, "l")
-	if want := "↑↓ 移动  ← 来源  tab 子榜  ↵ 打开  空格 详情  0-2 分类  / 搜索  ? 帮助  q 退出"; !strings.HasSuffix(st(), want) {
+	if want := "↑↓ 移动  ← 来源  tab 子榜  ↵ 打开  空格 翻预览  0-2 分类  / 搜索  ? 帮助  q 退出"; !strings.HasSuffix(st(), want) {
 		t.Fatalf("榜单提示：%q", st())
 	}
 	// 只有一个子榜单时不显示 tab。
@@ -1128,7 +1128,7 @@ func TestHints(t *testing.T) {
 		if !strings.HasSuffix(s, "? 帮助  q 退出") || lipgloss.Width(m.statusLine()) != w {
 			t.Fatalf("%d 列应保留 ? 与 q：%q", w, s)
 		}
-		all := []string{"↑↓ 移动", "← 来源", "tab 子榜", "↵ 打开", "空格 详情", "0-2 分类", "/ 搜索"}
+		all := []string{"↑↓ 移动", "← 来源", "tab 子榜", "↵ 打开", "空格 翻预览", "0-2 分类", "/ 搜索"}
 		gone := false
 		for _, h := range all {
 			has := strings.Contains(s, h)

@@ -137,7 +137,14 @@ func (m *model) rightX() int {
 	return m.leftWidth() + 1
 }
 
-func (m *model) rightWidth() int { return m.width - m.rightX() }
+// rightWidth 是榜单栏的宽度；三栏布局时不含预览栏与它前面的分隔线。
+func (m *model) rightWidth() int {
+	w := m.width - m.rightX()
+	if sw := m.sideWidth(); sw > 0 {
+		w -= sw + 1
+	}
+	return w
+}
 
 // paneAt 返回横坐标所在的栏。
 func (m *model) paneAt(x int) (focus, bool) {
@@ -149,6 +156,9 @@ func (m *model) paneAt(x int) (focus, bool) {
 	case x < lw:
 		return focusTree, true
 	case x == lw:
+		return 0, false
+	case x >= m.rightX()+m.rightWidth():
+		// 三栏布局的预览栏不参与切栏与点击。
 		return 0, false
 	}
 	return focusList, true
@@ -164,13 +174,7 @@ func (m *model) View() string {
 	var b strings.Builder
 	b.WriteString(m.headerLine())
 	b.WriteByte('\n')
-	var body []string
-	if m.det != nil {
-		body = m.detailLines(m.width, m.bodyHeight())
-	} else {
-		body = m.bodyLines()
-	}
-	for _, l := range body {
+	for _, l := range m.bodyLines() {
 		b.WriteString(l)
 		b.WriteByte('\n')
 	}
@@ -339,15 +343,25 @@ func (m *model) bodyLines() []string {
 		if m.focus == focusTree {
 			return m.sourceLines(m.width, h)
 		}
+		if m.previewFull() {
+			return append([]string{m.titleRow(m.width)}, m.previewBody(m.width, h-1)...)
+		}
 		return m.rightLines(m.width, h)
 	}
 	lw := m.leftWidth()
 	left := m.sourceLines(lw, h)
-	right := m.rightLines(m.width-lw-1, h)
+	right := m.rightLines(m.rightWidth(), h)
 	sep := styleSepColor.Render("│")
+	var side []string
+	if sw := m.sideWidth(); sw > 0 {
+		side = m.previewBody(sw, h)
+	}
 	out := make([]string, max(h, 0))
 	for i := range out {
 		out[i] = left[i] + sep + right[i]
+		if side != nil {
+			out[i] += sep + side[i]
+		}
 	}
 	return out
 }
@@ -622,11 +636,6 @@ func (m *model) listLines(w, h int) []string {
 		short := runewidth.Truncate(it.title, titleW, "…")
 		title := pad(short, titleW)
 		sel := i == m.listCur
-		// 排名与标题之间的第二个空格：有 AI 总结时显示标记，不改变列宽。
-		mark, hasMark := " ", m.hasInsight(it)
-		if hasMark {
-			mark = insightMark
-		}
 		var line string
 		if sel && focused {
 			rest := title
@@ -634,11 +643,7 @@ func (m *model) listLines(w, h int) []string {
 				rest += " " + meta
 			}
 			rest = pad(rest, w-1-rankW-2)
-			if hasMark {
-				line = styleSel.Render(rank+" ") + styleSel.Foreground(colorAccent).Render(mark) + styleSel.Render(rest)
-			} else {
-				line = styleSel.Render(rank + "  " + rest)
-			}
+			line = styleSel.Render(rank + "  " + rest)
 		} else {
 			rs := styleRank
 			if i < 3 && m.searchQ == "" {
@@ -652,10 +657,7 @@ func (m *model) listLines(w, h int) []string {
 				ts = styleHoverText
 			}
 			// 只给文字本身上样式，避免下划线延伸到行尾空白。
-			if hasMark {
-				mark = styleMarker.Render(mark)
-			}
-			line = rs.Render(rank) + " " + mark + ts.Render(short) + spaces(titleW-runewidth.StringWidth(short))
+			line = rs.Render(rank) + "  " + ts.Render(short) + spaces(titleW-runewidth.StringWidth(short))
 			used := rankW + 2 + titleW
 			if metaW > 0 {
 				ms := styleDim
@@ -690,9 +692,6 @@ type hint struct{ key, label string }
 
 // hints 返回底部的按键提示（不含始终保留的“? 帮助”“q 退出”），放不下时从后往前去掉。
 func (m *model) hints() []hint {
-	if m.det != nil {
-		return detailHints()
-	}
 	sub := hint{"tab", "子榜"}
 	if len(m.curSubs()) <= 1 {
 		sub = hint{}
@@ -708,7 +707,7 @@ func (m *model) hints() []hint {
 		if m.searchQ != "" {
 			hs = append(hs, hint{"esc", "返回榜单"})
 		}
-		hs = append(hs, hint{"空格", "详情"}, hint{m.menuKeys(), "分类"}, hint{"/", "搜索"})
+		hs = append(hs, hint{"空格", "翻预览"}, hint{m.menuKeys(), "分类"}, hint{"/", "搜索"})
 	}
 	out := hs[:0]
 	for _, h := range hs {
@@ -783,13 +782,11 @@ func (m *model) statusLine() string {
 			parts[i] = barHint(h.key, h.label)
 			plain += runewidth.StringWidth(h.key) + 1 + runewidth.StringWidth(h.label)
 		}
-		if m.det == nil {
-			for _, h := range fixedHints {
-				parts = append(parts, barHint(h.key, h.label))
-				plain += runewidth.StringWidth(h.key) + 1 + runewidth.StringWidth(h.label)
-			}
-			hs = append(hs[:len(hs):len(hs)], fixedHints...)
+		for _, h := range fixedHints {
+			parts = append(parts, barHint(h.key, h.label))
+			plain += runewidth.StringWidth(h.key) + 1 + runewidth.StringWidth(h.label)
 		}
+		hs = append(hs[:len(hs):len(hs)], fixedHints...)
 		if len(hs) > 1 {
 			plain += 2 * (len(hs) - 1)
 		}
@@ -845,7 +842,7 @@ var helpKeys = []struct {
 	keys  []hint
 }{
 	{"浏览", []hint{{"↑ ↓  j k", "在当前栏上下移动；左栏移动时榜单跟着切换"}, {"←  h", "去左栏选来源（单栏时打开来源列表）"}, {"→  l", "回到榜单（左栏回车同样）"}, {"tab  ⇧tab", "切换子榜单，到头后回到另一端"}, {"0-9  [ ]", "切换分类，0 为订阅"}, {"g G  PgUp PgDn", "开头、结尾、翻页"}}},
-	{"操作", []hint{{"回车", "榜单中在浏览器打开"}, {"空格", "详情与 AI 总结（" + insightMark + " 表示有总结）"}, {"p", "打开或关闭底部预览（双栏且至少 24 行时显示）"}, {"u", "内容监控中切换全部、只看未读"}, {"esc", "退出搜索、帮助与搜索结果"}, {"/  y  r", "搜索、复制链接、刷新"}, {"?  q", "帮助、退出"}}},
+	{"操作", []hint{{"回车", "榜单中在浏览器打开"}, {"空格", "预览向下翻一屏，到底后回到开头"}, {"p", "宽屏开关预览区；单栏切换整栏预览"}, {"u", "内容监控中切换全部、只看未读"}, {"esc", "退出搜索、帮助、搜索结果与整栏预览"}, {"/  y  r", "搜索、复制链接、刷新"}, {"?  q", "帮助、退出"}}},
 }
 
 func (m *model) helpBody(w, h int) []string {

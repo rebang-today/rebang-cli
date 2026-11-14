@@ -67,6 +67,20 @@ func TestViewGolden(t *testing.T) {
 	m = start(t, f3, Options{Now: fixedNow})
 	section("加载失败 80x10", snapshot(m, 80, 10))
 
+	fi := insightFake()
+	m = start(t, fi, Options{Now: fixedNow})
+	key(t, m, "l")
+	section("下方预览 100x26", snapshot(m, 100, 26))
+	waitInsight(t, m)
+	section("三栏·完整总结 140x24", snapshot(m, 140, 24))
+	key(t, m, " ")
+	section("三栏·翻页 140x24", snapshot(m, 140, 24))
+	section("单栏·整栏预览 48x16", func() string {
+		m.Update(tea.WindowSizeMsg{Width: 48, Height: 16})
+		key(t, m, "p")
+		return snapshot(m, 48, 16)
+	}())
+
 	golden.Assert(t, "views", b.String())
 }
 
@@ -104,7 +118,7 @@ func TestSpinnerOnlyWhileLoading(t *testing.T) {
 }
 
 func TestTinyWindowsDoNotPanic(t *testing.T) {
-	sizes := [][2]int{{0, 0}, {1, 1}, {4, 1}, {8, 2}, {12, 3}, {19, 4}, {20, 5}, {39, 10}, {40, 9}, {40, 10}, {48, 12}, {55, 10}, {56, 10}, {110, 30}}
+	sizes := [][2]int{{0, 0}, {1, 1}, {4, 1}, {8, 2}, {12, 3}, {19, 4}, {20, 5}, {39, 10}, {40, 9}, {40, 10}, {48, 12}, {55, 10}, {56, 10}, {110, 30}, {129, 24}, {130, 16}, {130, 15}, {140, 30}, {200, 50}}
 	for _, logged := range []bool{false, true} {
 		m := start(t, newFake(), Options{LoggedIn: logged})
 		for _, sz := range sizes {

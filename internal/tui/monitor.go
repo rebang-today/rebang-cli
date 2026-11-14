@@ -10,7 +10,6 @@ import (
 
 	"github.com/rebang-today/rebang-cli/internal/api"
 	"github.com/rebang-today/rebang-cli/internal/cli"
-	"github.com/rebang-today/rebang-cli/internal/summary"
 	"github.com/rebang-today/rebang-cli/internal/ui"
 )
 
@@ -204,7 +203,7 @@ func (m *model) addHits(hits []api.MonitorHit) {
 
 // maybeMore 在光标接近末尾且还有下一页时加载下一页。
 func (m *model) maybeMore() tea.Cmd {
-	if !m.inMonitor() || m.loading || m.mon.more || !m.mon.hasMore || m.det != nil {
+	if !m.inMonitor() || m.loading || m.mon.more || !m.mon.hasMore {
 		return nil
 	}
 	if len(m.items)-1-m.listCur >= monitorMoreAt {
@@ -276,9 +275,6 @@ func (m *model) markRead(it row) tea.Cmd {
 		if m.items[i].key == it.key {
 			m.items[i].unread = false
 		}
-	}
-	if m.det != nil && m.det.it.key == it.key {
-		m.det.it.unread = false
 	}
 	src, key := m.opt.Source, it.key
 	return func() tea.Msg {
@@ -361,7 +357,7 @@ func relTime(ts int64, now time.Time) string {
 	return t.Format("2006年1月2日")
 }
 
-// monitorLines 渲染命中列表：未读圆点、AI 总结标记、标题、灰色的“来源 · 命中词”，右侧命中时间。
+// monitorLines 渲染命中列表：未读圆点、标题、灰色的“来源 · 命中词”，右侧命中时间。
 func (m *model) monitorLines(w, h int) []string {
 	out := make([]string, 0, max(h, 0))
 	focused := m.focus == focusList
@@ -372,8 +368,8 @@ func (m *model) monitorLines(w, h int) []string {
 	for i := m.listOff; i < len(m.items) && len(out) < h; i++ {
 		it := m.items[i]
 		sel := i == m.listCur
-		// 行首标记 1 列 + 圆点 1 列 + 空格 + 总结标记 1 列 + 正文 + 行尾 1 列。
-		body := w - 1 - 3 - 1
+		// 行首标记 1 列 + 圆点 1 列 + 空格 + 正文 + 行尾 1 列。
+		body := w - 1 - 2 - 1
 		tw := timeW
 		if body-tw-2 < 8 {
 			tw = 0
@@ -400,17 +396,14 @@ func (m *model) monitorLines(w, h int) []string {
 			when = runewidth.Truncate(it.when, tw, "")
 			when = spaces(tw-runewidth.StringWidth(when)) + when
 		}
-		dot, mark := " ", " "
+		dot := " "
 		if it.unread {
 			dot = unreadDot
-		}
-		if m.hasInsight(it) {
-			mark = insightMark
 		}
 		var line string
 		if sel && focused {
 			st := styleSel
-			line = st.Foreground(colorAccent).Render(dot) + st.Render(" ") + st.Foreground(colorAccent).Render(mark) + st.Render(title)
+			line = st.Foreground(colorAccent).Render(dot) + st.Render(" ") + st.Render(title)
 			if subText != "" {
 				line += st.Render("  ") + st.Foreground(colorDim).Render(subText)
 			}
@@ -427,7 +420,7 @@ func (m *model) monitorLines(w, h int) []string {
 			case m.hovered(focusList, i):
 				ts = styleHoverText
 			}
-			line = styleMarker.Render(dot) + " " + styleMarker.Render(mark) + ts.Render(title)
+			line = styleMarker.Render(dot) + " " + ts.Render(title)
 			if subText != "" {
 				line += "  " + styleDim.Render(subText)
 			}
@@ -455,12 +448,12 @@ func nonEmpty(ss ...string) []string {
 	return out
 }
 
-// matchLines 是详情页的“命中”区块：逐条列出计划名与命中词。
-func matchLines(it row) []summary.Line {
+// matchText 是预览中“命中：”后面的内容：计划名与命中词，多个计划用“；”分隔。
+func matchText(it row) string {
 	if !it.mon || len(it.plans) == 0 {
-		return nil
+		return ""
 	}
-	out := []summary.Line{{Kind: summary.Heading, Text: "命中"}}
+	var parts []string
 	for _, p := range it.plans {
 		var kws []string
 		for _, k := range p.MatchedKeywords {
@@ -468,7 +461,7 @@ func matchLines(it row) []summary.Line {
 				kws = append(kws, k)
 			}
 		}
-		out = append(out, summary.Line{Kind: summary.Bullet, Label: ui.CleanText(p.PlanName) + "：", Text: strings.Join(kws, "、")})
+		parts = append(parts, ui.CleanText(p.PlanName)+"："+strings.Join(kws, "、"))
 	}
-	return out
+	return strings.Join(parts, "；")
 }

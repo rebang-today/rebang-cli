@@ -155,11 +155,15 @@ func TestMonitorOpenMarksRead(t *testing.T) {
 	if len(opened) != 3 || opened[2] != "https://example.com/h2" || m.items[2].unread || m.isError {
 		t.Fatalf("read 失败时仍应打开原文：%v err=%v %q", opened, m.isError, m.message)
 	}
-	// 详情页回车同样标记已读。
+	// 只看预览不标记已读。
+	n := len(f.monReadCalls)
 	f.monReadErr = nil
-	key(t, m, "j", "j", " ", "enter") // 命中04
-	if m.det == nil || m.det.it.unread || f.monReadCalls[len(f.monReadCalls)-1] != fmt.Sprintf("%032x", 4) {
-		t.Fatalf("详情页回车应标记已读：%v", f.monReadCalls)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	key(t, m, "j")
+	was := m.items[m.listCur].unread
+	key(t, m, " ")
+	if len(f.monReadCalls) != n || m.items[m.listCur].unread != was {
+		t.Fatalf("预览不应标记已读：%v", f.monReadCalls)
 	}
 }
 
@@ -241,28 +245,24 @@ func TestMonitorPlanSubs(t *testing.T) {
 	}
 }
 
-func TestMonitorDetail(t *testing.T) {
+func TestMonitorPreview(t *testing.T) {
 	f := monitorFake()
 	f.insights = map[string]*api.Insight{fmt.Sprintf("%032x", 1): {SummaryShort: "命中的一句话总结"}}
 	f.shorts = map[string]string{fmt.Sprintf("%032x", 1): "命中的一句话总结"}
 	m := startMonitor(t, f, Options{LoggedIn: true})
-	if v := plainView(m); !strings.Contains(lineWith(v, "命中01"), insightMark+"命中01") {
-		t.Fatalf("有 AI 总结的命中应显示标记\n%s", v)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	if v := plainView(m); strings.Contains(v, "✦") {
+		t.Fatalf("不再显示 ✦ 标记\n%s", v)
 	}
-	key(t, m, "j", " ")
-	v := plainView(m)
-	for _, s := range []string{"命中01", "微博 · 4 分钟前", "命中", "• 苹果：苹果、GPU", "AI 总结", "命中的一句话总结"} {
-		if !strings.Contains(v, s) {
-			t.Fatalf("详情缺少 %q\n%s", s, v)
+	key(t, m, "j")
+	pt := previewText(m)
+	for _, s := range []string{"微博 · 4 分钟前", "命中：苹果：苹果、GPU", "AI 总结", "命中的一句话总结"} {
+		if !strings.Contains(pt, s) {
+			t.Fatalf("预览缺少 %q\n%s", s, pt)
 		}
 	}
-	if strings.Index(v, "苹果：苹果") > strings.Index(v, "AI 总结") {
-		t.Fatal("命中区块应在 AI 总结之前")
-	}
-	// 预览照常工作。
-	key(t, m, "esc")
-	if v := plainView(m); !strings.Contains(v, "AI 总结 命中的一句话总结") {
-		t.Fatalf("预览应显示 AI 总结\n%s", v)
+	if strings.Index(pt, "命中：") > strings.Index(pt, "AI 总结") || strings.Contains(pt, "热度") {
+		t.Fatalf("命中行应在 AI 总结之前\n%s", pt)
 	}
 }
 

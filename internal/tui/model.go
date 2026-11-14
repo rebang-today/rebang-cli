@@ -57,7 +57,7 @@ const (
 // row 是右栏的一行。
 type row struct {
 	title, url, mobile, meta, desc string
-	// key 是条目的 item_key，用于查询 AI 总结；src、when、heat 用于预览与详情的来源、时间、热度。
+	// key 是条目的 item_key，用于查询 AI 总结；src、when、heat 用于预览的来源、时间、热度。
 	key, src, when, heat string
 	// 内容监控的命中内容（D-27）：mon 为 true；unread 为未读；match 是命中词；plans 是命中的计划。
 	mon    bool
@@ -124,12 +124,17 @@ type model struct {
 	lastClickPan focus
 
 	// AI 总结（D-26）：shorts 是批量查到的一句话总结，shortSeen 记录已查询过的 item_key（含没有总结的）；
-	// insights 是详情页按 item_key 缓存的完整总结；previewOff 表示关闭了双栏底部的预览；det 为打开的详情页。
+	// insights 是按 item_key 缓存的完整总结；previewOff 表示宽屏关闭了预览区，pvFull 表示单栏显示整栏预览。
+	// pvKey 是预览中的条目，pvOff 是翻页位置；pvWait 是等待请求完整总结的条目，insSeq 用于丢弃过期的等待。
 	shorts     map[string]string
 	shortSeen  map[string]bool
 	insights   map[string]*insightEntry
 	previewOff bool
-	det        *detailState
+	pvFull     bool
+	pvKey      string
+	pvOff      int
+	pvWait     string
+	insSeq     int
 
 	// mon 是内容监控的数据与分页状态（D-27）。
 	mon monitorState
@@ -374,6 +379,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if more := m.maybeMore(); more != nil {
 		cmd = tea.Batch(cmd, more)
 	}
+	if ins := m.syncPreview(); ins != nil {
+		cmd = tea.Batch(cmd, ins)
+	}
 	if sig := m.posSignature(); sig != m.posSig {
 		// 启动后第一次得到位置只是恢复记忆，不必写入。
 		if m.posSig != "" {
@@ -390,7 +398,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // busy 表示有正在进行的加载，需要转圈动画。
 func (m *model) busy() bool {
-	if m.loading || m.detailLoading() || (len(m.menus) == 0 && m.menuErr == "") {
+	if m.loading || m.previewLoading() || (len(m.menus) == 0 && m.menuErr == "") {
 		return true
 	}
 	if mn, ok := m.curMenu(); ok && m.menuLoading[mn.ID] {
@@ -408,12 +416,11 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		wasWide := m.wide()
 		m.width, m.height = msg.Width, msg.Height
-		if wasWide && !m.wide() && m.focus == focusTree {
-			// 变成单栏时默认显示榜单，按 ← 打开来源列表。
-			m.focus = focusList
+		if wasWide && !m.wide() {
+			// 变成单栏时默认显示榜单，按 ← 打开来源列表，按 p 打开整栏预览。
+			m.focus, m.pvFull = focusList, false
 		}
 		m.clamp()
-		m.clampDetail()
 		return m, nil
 	case tea.KeyMsg:
 		return m, m.onKey(msg)
@@ -539,6 +546,8 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case insightMsg:
 		m.onInsight(msg)
 		return m, nil
+	case insightWaitMsg:
+		return m, m.loadInsight(msg)
 	case monitorMsg:
 		return m, m.onMonitor(msg)
 	case monitorMoreMsg:
@@ -938,9 +947,6 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 	if key == "ctrl+c" {
 		return tea.Quit
 	}
-	if m.det != nil {
-		return m.detailKey(key)
-	}
 	if m.searching {
 		switch key {
 		case "esc":
@@ -988,7 +994,11 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 		m.input.SetValue("")
 		return m.input.Focus()
 	case "esc":
-		// Esc 只用来退出搜索结果（搜索框与帮助在上面处理），不切换栏。
+		// Esc 只用来退出单栏整栏预览与搜索结果（搜索框与帮助在上面处理），不切换栏。
+		if m.previewFull() {
+			m.pvFull = false
+			return nil
+		}
 		if m.searchQ != "" {
 			return m.loadCurrent()
 		}
@@ -1029,7 +1039,7 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 	case "left", "h":
 		// 去左栏（单栏时打开整栏的来源列表）；已在左栏时不做任何事。
 		if m.focus == focusList {
-			m.focus, m.hoverOK = focusTree, false
+			m.focus, m.hoverOK, m.pvFull = focusTree, false, false
 			m.clamp()
 		}
 	case "right", "l":
@@ -1043,7 +1053,7 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 	case "pgdown", "ctrl+f":
 		return m.move(m.paneHeight())
 	case " ", "space":
-		return m.openDetail()
+		m.pagePreview()
 	case "p":
 		m.togglePreview()
 	case "u":
@@ -1209,20 +1219,8 @@ func (m *model) hitTest(x, y int) hit {
 }
 
 func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
-	if m.tooSmall() || m.help || m.searching {
+	if m.tooSmall() || m.help || m.searching || m.previewFull() {
 		m.setPointer(false)
-		return nil
-	}
-	if m.det != nil {
-		m.setPointer(false)
-		if ev.Action == tea.MouseActionPress && (ev.Button == tea.MouseButtonWheelUp || ev.Button == tea.MouseButtonWheelDown) {
-			d := 3
-			if ev.Button == tea.MouseButtonWheelUp {
-				d = -3
-			}
-			m.det.off += d
-			m.clampDetail()
-		}
 		return nil
 	}
 	h := m.hitTest(ev.X, ev.Y)
