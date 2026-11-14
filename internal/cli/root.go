@@ -25,7 +25,8 @@ func NewRootCmd(a *App) *cobra.Command {
 输出到终端时默认 table，被管道或 Agent 调用时默认 json。
 
 退出码：0 成功，1 一般错误，2 参数错误，3 未登录或凭证失效，
-4 需要会员，5 被限流，6 网络错误，7 需要升级。`,
+4 需要会员，5 被限流，6 网络错误，7 需要升级，
+8 条目暂无 AI 总结（summary）。`,
 		Example: `  rebang                         进入交互界面
   rebang auth login              浏览器授权登录
   rebang menus                   查看菜单

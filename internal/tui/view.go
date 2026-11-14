@@ -678,7 +678,7 @@ func (m *model) hints() []hint {
 		if sub {
 			hs = append(hs, hint{"←→", "切换"})
 		}
-		hs = append(hs, hint{"↵", "进入列表"}, hint{m.menuKeys(), "分类"}, hint{"/", "搜索"}, hint{"p", "预览"})
+		hs = append(hs, hint{"↵", "进入列表"}, hint{m.menuKeys(), "分类"}, hint{"空格", "详情"}, hint{"/", "搜索"}, hint{"p", "预览"})
 	default:
 		hs = []hint{{"↵", "打开"}, {"空格", "详情"}}
 		if sub {
