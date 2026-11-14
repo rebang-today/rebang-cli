@@ -1,10 +1,11 @@
 # 发版流水线（D-55）：构建 → sha256 与 minisign 签名 → GitHub Releases → Homebrew tap
 # → 上传下载站（cli.rebang.today → OSS Bucket 根目录）→ 最后写入 manifest.json。
 #
+# 只在推送 v* tag 时运行：release Environment 的部署策略只允许 v* tag。
 # Secrets（放在名为 release 的 Environment 中）：
 #   MINISIGN_SECRET_KEY   minisign 私钥文件内容
 #   MINISIGN_PASSWORD     私钥密码
-#   HOMEBREW_TAP_TOKEN    对 rebang-today/homebrew-tap 有写权限的 token
+#   HOMEBREW_TAP_DEPLOY_KEY  ed25519 私钥内容，对应 rebang-today/homebrew-tap 的可写 deploy key
 #   OSS_ACCESS_KEY_ID     仅限写入 Bucket rebang-cli 的 OSS 子账号 AccessKey
 #   OSS_ACCESS_KEY_SECRET
 # Variables：
@@ -68,7 +69,7 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
           MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
 
       - name: 用内置公钥校验签名

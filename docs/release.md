@@ -12,7 +12,7 @@
 minisign -G -p minisign.pub -s minisign.key
 ```
 
-- 把 `minisign.pub` 的内容提交到 `internal/update/minisign.pub`。公钥为空时程序拒绝自升级，发版流水线也会直接失败。
+- 把 `minisign.pub` 的内容提交到 `internal/update/minisign.pub`（当前正式公钥 ID 为 `05B5851321C39815`，测试会校验）。公钥为空时程序拒绝自升级，发版流水线也会直接失败。
 - `minisign.key` 与密码只放进 GitHub Secrets 和离线备份，不要提交。私钥丢失后，已发布的程序无法再验证新版本，只能通过安装脚本重新安装。
 
 ### 2. 下载站 cli.rebang.today
@@ -35,13 +35,13 @@ cli.rebang.today  ──CNAME──▶  OSS Bucket rebang-cli（公共读，根�
 
 ### 3. GitHub 配置
 
-在仓库 Settings → Environments 中创建名为 `release` 的 Environment，并配置：
+在仓库 Settings → Environments 中创建名为 `release` 的 Environment，部署策略只允许 `v*` tag（流水线只在推送 `v*` tag 时运行），并配置：
 
 | 类型 | 名称 | 说明 |
 | --- | --- | --- |
 | Secret | `MINISIGN_SECRET_KEY` | `minisign.key` 文件的完整内容 |
 | Secret | `MINISIGN_PASSWORD` | 私钥密码 |
-| Secret | `HOMEBREW_TAP_TOKEN` | 只对 `rebang-today/homebrew-tap` 有 Contents 写权限的 fine-grained token |
+| Secret | `HOMEBREW_TAP_DEPLOY_KEY` | ed25519 私钥内容；对应公钥作为可写 deploy key 加到 `rebang-today/homebrew-tap`，goreleaser 经 SSH 推送 Formula |
 | Secret | `OSS_ACCESS_KEY_ID` | OSS 子账号 AccessKey，权限仅限写入 Bucket `rebang-cli` |
 | Secret | `OSS_ACCESS_KEY_SECRET` | 同上 |
 | Variable | `OSS_BUCKET` | `rebang-cli` |
@@ -49,7 +49,7 @@ cli.rebang.today  ──CNAME──▶  OSS Bucket rebang-cli（公共读，根�
 | Variable | `OSS_REGION` | 地域，如 `cn-<地域>` |
 | Variable | `CDN_BASE_URL` | `https://cli.rebang.today`，必须与程序内置的 manifest 地址、安装脚本中的默认地址一致 |
 
-另外需要创建空仓库 `rebang-today/homebrew-tap`。
+另外需要创建空仓库 `rebang-today/homebrew-tap`，生成 ed25519 密钥对（`ssh-keygen -t ed25519 -N "" -f tap_deploy_key`），把公钥作为允许写入的 deploy key 加到该仓库，私钥内容填入 `HOMEBREW_TAP_DEPLOY_KEY`。
 
 ## 发布
 

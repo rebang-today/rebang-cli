@@ -83,7 +83,10 @@ brews:
     repository:
       owner: rebang-today
       name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+      # 通过 SSH deploy key（对 homebrew-tap 可写）推送，不使用 token。
+      git:
+        url: "git@github.com:rebang-today/homebrew-tap.git"
+        private_key: "{{ .Env.HOMEBREW_TAP_DEPLOY_KEY }}"
     directory: Formula
     homepage: https://rebang.today
     description: 今日热榜（rebang.today）官方命令行客户端

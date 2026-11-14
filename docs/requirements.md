@@ -122,7 +122,7 @@
   - macOS 另可 `brew install rebang-today/tap/rebang`
   - 不提供 npm 与 scoop。
   - 安装脚本按需询问是否同时安装 Agent Skill，最后只提示登录是可选的（见 D-65）。
-- **D-55 发版流水线**：推送 `v*` tag 触发 GitHub Actions，由 goreleaser 依次完成：构建、生成 sha256 与 minisign 签名、发布 GitHub Releases、更新 Homebrew tap、上传到下载站 Bucket 根目录，**最后**写入 `manifest.json`。需要的 Secrets：仅限写入 Bucket `rebang-cli` 的 OSS 子账号密钥、minisign 私钥、tap 仓库写权限 token。
+- **D-55 发版流水线**：推送 `v*` tag 触发 GitHub Actions，由 goreleaser 依次完成：构建、生成 sha256 与 minisign 签名、发布 GitHub Releases、更新 Homebrew tap、上传到下载站 Bucket 根目录，**最后**写入 `manifest.json`。需要的 Secrets：仅限写入 Bucket `rebang-cli` 的 OSS 子账号密钥、minisign 私钥、对 tap 仓库可写的 SSH deploy key（`HOMEBREW_TAP_DEPLOY_KEY`）。
 - **D-56 版本号**：语义化版本，从 v0.1.0 开始。1.0 之前允许不兼容变更；1.0 之后命令名、参数、JSON 字段、退出码均视为稳定接口，不兼容变更必须升主版本。每个版本附带更新日志。
 
 ### Agent Skill
