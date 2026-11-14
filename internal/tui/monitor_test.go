@@ -53,7 +53,7 @@ func startMonitor(t *testing.T, f *fakeSource, opt Options) *model {
 	}
 	m := start(t, f, opt)
 	m.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
-	key(t, m, "0", "tab")
+	key(t, m, "0", "l")
 	return m
 }
 
@@ -198,8 +198,9 @@ func TestMonitorUnreadToggle(t *testing.T) {
 		t.Fatalf("切回全部：%s", b)
 	}
 	// 普通榜单里 u 无动作。
-	key(t, m2, "J")
+	key(t, m2, "h", "j")
 	settle(t, m2)
+	key(t, m2, "l")
 	n := len(f2.monHitsCalls)
 	key(t, m2, "u")
 	if m2.mon.unreadOnly || len(f2.monHitsCalls) != n {
@@ -213,7 +214,7 @@ func TestMonitorUnreadToggle(t *testing.T) {
 func TestMonitorPlanSubs(t *testing.T) {
 	f := monitorFake()
 	m := startMonitor(t, f, Options{LoggedIn: true})
-	key(t, m, "l")
+	key(t, m, "tab")
 	q := f.monHitsCalls[len(f.monHitsCalls)-1]
 	if q.PlanID != 7 || q.Cursor != "" || m.subIdx != 1 {
 		t.Fatalf("→ 应切到第一个计划：%+v", q)
@@ -223,12 +224,12 @@ func TestMonitorPlanSubs(t *testing.T) {
 			t.Fatalf("应只显示计划 7：%+v", it)
 		}
 	}
-	key(t, m, "l")
+	key(t, m, "tab")
 	if q := f.monHitsCalls[len(f.monHitsCalls)-1]; q.PlanID != 3 {
 		t.Fatalf("%+v", q)
 	}
 	// 计划没有命中内容：提示，不崩溃。
-	key(t, m, "l")
+	key(t, m, "tab")
 	if len(m.items) != 0 || !strings.Contains(plainView(m), "还没有命中内容") {
 		t.Fatalf("特斯拉没有命中\n%s", plainView(m))
 	}
@@ -321,7 +322,7 @@ func TestMonitorSmallSizes(t *testing.T) {
 					t.Fatalf("%dx%d 溢出：%q", sz[0], sz[1], l)
 				}
 			}
-			key(t, m, "j", "u", "l", "G")
+			key(t, m, "j", "u", "tab", "G")
 		}
 	}
 }

@@ -93,8 +93,6 @@ type model struct {
 	debPending bool
 	// autoSub 表示当前子榜单是自动选的（没有记忆），而不是用户手动选的。
 	autoSub bool
-	// pickFrom 是单栏打开来源列表前的来源下标，Esc 时恢复。
-	pickFrom int
 	// menusSeen 表示已经按记忆选过启动时的菜单。
 	menusSeen bool
 
@@ -408,15 +406,11 @@ func (m *model) spinTick() tea.Cmd {
 func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		wasWide, wasPicking := m.wide(), m.picking()
+		wasWide := m.wide()
 		m.width, m.height = msg.Width, msg.Height
-		switch {
-		case wasWide && !m.wide() && m.focus == focusTree:
-			// 变成单栏时默认显示榜单，来源列表按 tab 打开。
+		if wasWide && !m.wide() && m.focus == focusTree {
+			// 变成单栏时默认显示榜单，按 ← 打开来源列表。
 			m.focus = focusList
-		case wasPicking && m.wide():
-			// 正在单栏里选来源时变宽：放弃未确认的选择。
-			m.srcCur = m.pickFrom
 		}
 		m.clamp()
 		m.clampDetail()
@@ -718,13 +712,7 @@ func (m *model) memKey(s source) string {
 }
 
 // savePos 记住当前菜单的来源与当前来源（手动选过）的子榜单。
-// 单栏来源列表打开时，记住的是打开前的来源，未确认的选择不保存。
 func (m *model) savePos() {
-	if m.picking() {
-		cur := m.srcCur
-		m.srcCur = m.pickFrom
-		defer func() { m.srcCur = cur }()
-	}
 	mn, ok := m.curMenu()
 	if !ok || m.data[mn.ID] == nil {
 		return
@@ -883,7 +871,7 @@ func (m *model) loadCurrent() tea.Cmd {
 	return m.loadList(t)
 }
 
-// moveSource 移动左栏光标，停下 debounce 后再加载右栏；焦点留在左栏。
+// moveSource 移动左栏光标，右栏跟着切换：停下 debounce 后再加载；焦点留在左栏。
 func (m *model) moveSource(d int) tea.Cmd {
 	srcs := m.curSources()
 	if len(srcs) == 0 {
@@ -983,11 +971,6 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 	m.message = ""
-	if m.picking() {
-		if cmd, done := m.pickerKey(key); done {
-			return cmd
-		}
-	}
 	if len(key) == 1 && key[0] >= '0' && key[0] <= '9' {
 		// 0 是订阅，1～9 是服务端菜单（m.menus 的下标与数字一致）。
 		if i := int(key[0] - '0'); i < len(m.menus) && i != m.menuIdx {
@@ -1005,22 +988,14 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 		m.input.SetValue("")
 		return m.input.Focus()
 	case "esc":
+		// Esc 只用来退出搜索结果（搜索框与帮助在上面处理），不切换栏。
 		if m.searchQ != "" {
 			return m.loadCurrent()
 		}
-		if m.wide() {
-			m.focus = focusTree
-		}
-	case "tab", "shift+tab":
-		if !m.wide() {
-			m.openPicker()
-			return nil
-		}
-		if m.focus == focusTree {
-			m.focus = focusList
-		} else {
-			m.focus = focusTree
-		}
+	case "tab":
+		return m.cycleSub(1)
+	case "shift+tab":
+		return m.cycleSub(-1)
 	case "[":
 		if len(m.menus) > 0 {
 			return m.enterMenu((m.menuIdx - 1 + len(m.menus)) % len(m.menus))
@@ -1052,18 +1027,17 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 	case "y":
 		return m.copySelected()
 	case "left", "h":
-		return m.setSub(m.subIdx - 1)
+		// 去左栏（单栏时打开整栏的来源列表）；已在左栏时不做任何事。
+		if m.focus == focusList {
+			m.focus, m.hoverOK = focusTree, false
+			m.clamp()
+		}
 	case "right", "l":
-		return m.setSub(m.subIdx + 1)
+		return m.enterList()
 	case "up", "k":
 		return m.move(-1)
 	case "down", "j":
 		return m.move(1)
-	case "K", "shift+up":
-		// 在榜单里直接换来源：左栏光标同步移动，焦点不变，停下 debounce 后再加载。
-		return m.moveSource(-1)
-	case "J", "shift+down":
-		return m.moveSource(1)
 	case "pgup", "ctrl+b":
 		return m.move(-m.paneHeight())
 	case "pgdown", "ctrl+f":
@@ -1082,75 +1056,35 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 		if m.focus == focusList {
 			return m.openSelected()
 		}
-		m.focus = focusList
-		if m.debPending {
-			return m.loadCurrent()
-		}
+		return m.enterList()
 	}
 	return nil
 }
 
-// picking 表示单栏模式下打开了来源列表（占满整栏）。
-func (m *model) picking() bool { return !m.wide() && m.focus == focusTree }
-
-// openPicker 在单栏模式下打开来源列表。
-func (m *model) openPicker() {
-	m.pickFrom, m.focus, m.hoverOK = m.srcCur, focusTree, false
-	m.clamp()
-}
-
-// cancelPick 关闭来源列表并回到原来的来源，不切换。
-func (m *model) cancelPick() {
-	m.srcCur, m.focus = m.pickFrom, focusList
-	m.clamp()
-}
-
-// commitPick 关闭来源列表并切换到第 i 个来源。
-func (m *model) commitPick(i int) tea.Cmd {
-	m.srcCur, m.focus = m.pickFrom, focusList
-	if i == m.pickFrom && m.searchQ == "" && m.target.key() != "||" {
-		m.clamp()
+// enterList 从左栏回到榜单；左栏移动后的防抖还没触发时立即加载。已在榜单时不做任何事。
+func (m *model) enterList() tea.Cmd {
+	if m.focus == focusList {
 		return nil
 	}
-	return m.selectSource(i)
+	m.focus, m.hoverOK = focusList, false
+	m.clamp()
+	if m.debPending {
+		return m.loadCurrent()
+	}
+	return nil
 }
 
-// pickerKey 处理来源列表打开时的按键；done 为 false 时交给普通按键处理。
-func (m *model) pickerKey(key string) (cmd tea.Cmd, done bool) {
-	n := len(m.curSources())
-	step := func(d int) {
-		if n > 0 {
-			m.srcCur = clampIdx(m.srcCur+d, n)
-		}
-		m.clamp()
+// cycleSub 循环切换子榜单（tab 向后、shift+tab 向前），到头后回到另一端；只有一个子榜单时不做任何事。
+func (m *model) cycleSub(d int) tea.Cmd {
+	n := len(m.curSubs())
+	if n <= 1 {
+		return nil
 	}
-	switch key {
-	case "up", "k", "K", "shift+up":
-		step(-1)
-	case "down", "j", "J", "shift+down":
-		step(1)
-	case "pgup", "ctrl+b":
-		step(-m.bodyHeight())
-	case "pgdown", "ctrl+f", " ":
-		step(m.bodyHeight())
-	case "home", "g":
-		step(-1 << 20)
-	case "end", "G":
-		step(1 << 20)
-	case "enter":
-		return m.commitPick(m.srcCur), true
-	case "esc", "tab", "shift+tab":
-		m.cancelPick()
-	case "left", "h", "right", "l", "y":
-	case "q", "?", "r":
-		return nil, false
-	default:
-		// 切换分类、搜索等：先关闭来源列表，再按普通按键处理。
-		m.cancelPick()
-		return nil, false
-	}
-	return nil, true
+	return m.setSub(((clampIdx(m.subIdx, n)+d)%n + n) % n)
 }
+
+// picking 表示单栏模式下显示整栏的来源列表。
+func (m *model) picking() bool { return !m.wide() && m.focus == focusTree }
 
 // move 在当前焦点栏内移动；左栏移动会延迟加载右栏。
 func (m *model) move(d int) tea.Cmd {
@@ -1332,7 +1266,9 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 		return m.setSub(h.idx)
 	case hitSource:
 		if !m.wide() {
-			return m.commitPick(h.idx)
+			// 单栏的来源列表：点击即切换并回到榜单。
+			m.focus = focusList
+			return m.selectSource(h.idx)
 		}
 		m.focus = focusTree
 		m.lastClickAt, m.lastClickIdx, m.lastClickPan = now, h.idx, focusTree

@@ -20,9 +20,10 @@ var (
 	// 浅色背景上 #F7670D 对比度只有 3:1，改用略深的橙色。
 	colorRankTop = lipgloss.AdaptiveColor{Light: "#D9480F", Dark: "#F7670D"}
 
-	styleHeader   = lipgloss.NewStyle().Bold(true).Foreground(colorAccent)
-	styleDim      = lipgloss.NewStyle().Foreground(colorDim)
-	styleSel      = lipgloss.NewStyle().Background(colorSelBg).Bold(true)
+	styleHeader = lipgloss.NewStyle().Bold(true).Foreground(colorAccent)
+	styleDim    = lipgloss.NewStyle().Foreground(colorDim)
+	// 焦点栏的选中行：强调色文字加选中底色；非焦点栏只保留灰色竖条与加粗，不用强调色与底色。
+	styleSel      = lipgloss.NewStyle().Background(colorSelBg).Foreground(colorAccent).Bold(true)
 	styleSelBlur  = lipgloss.NewStyle().Bold(true)
 	styleGroup    = lipgloss.NewStyle().Bold(true)
 	styleBar      = lipgloss.NewStyle().Background(colorBar)
@@ -442,7 +443,12 @@ func (m *model) titleRow(w int) string {
 	if gap < 0 {
 		gap = 0
 	}
-	return " " + styleCrumb.Render(title) + spaces(gap) + styleDim.Render(count) + " "
+	// 焦点在榜单时标题用强调色，与左栏区分当前栏。
+	ts := styleCrumb
+	if m.focus == focusList {
+		ts = ts.Foreground(colorAccent)
+	}
+	return " " + ts.Render(title) + spaces(gap) + styleDim.Render(count) + " "
 }
 
 func (m *model) stripSegs(x0, w int) ([]seg, bool, bool) {
@@ -682,49 +688,39 @@ func barHint(key, label string) string {
 
 type hint struct{ key, label string }
 
+// hints 返回底部的按键提示（不含始终保留的“? 帮助”“q 退出”），放不下时从后往前去掉。
 func (m *model) hints() []hint {
 	if m.det != nil {
 		return detailHints()
 	}
-	sub := m.hasStrip()
-	var hs []hint
-	switch {
-	case m.searchQ != "":
-		hs = []hint{{"↵", "打开"}, {"空格", "详情"}, {"esc", "返回榜单"}, {"y", "复制"}, {"/", "搜索"}}
-		if !m.wide() {
-			hs = append(hs[:3], append([]hint{{"tab", "来源"}}, hs[3:]...)...)
-		} else {
-			hs = append(hs, hint{"p", "预览"})
-		}
-	case m.picking():
-		hs = []hint{{"↑↓", "选择"}, {"↵", "切换"}, {"esc", "返回榜单"}, {m.menuKeys(), "分类"}}
-	case !m.wide():
-		hs = []hint{{"tab", "来源"}, {"↵", "打开"}, {"空格", "详情"}}
-		if m.inMonitor() {
-			hs = append(hs, m.unreadHint())
-		}
-		if sub {
-			hs = append(hs, hint{"←→", "切换"})
-		}
-		hs = append(hs, hint{m.menuKeys(), "分类"}, hint{"y", "复制"}, hint{"/", "搜索"})
-	case m.focus == focusTree:
-		hs = []hint{{"↑↓", "榜单"}}
-		if sub {
-			hs = append(hs, hint{"←→", "切换"})
-		}
-		hs = append(hs, hint{"↵", "进入列表"}, hint{m.menuKeys(), "分类"}, hint{"空格", "详情"}, hint{"/", "搜索"}, hint{"p", "预览"})
-	default:
-		hs = []hint{{"↵", "打开"}, {"空格", "详情"}}
-		if m.inMonitor() {
-			hs = append(hs, m.unreadHint())
-		}
-		if sub {
-			hs = append(hs, hint{"←→", "切换"})
-		}
-		hs = append(hs, hint{"esc", "返回"}, hint{"y", "复制"}, hint{"/", "搜索"}, hint{"J/K", "换来源"}, hint{"p", "预览"})
+	sub := hint{"tab", "子榜"}
+	if len(m.curSubs()) <= 1 {
+		sub = hint{}
 	}
-	return append(hs, hint{"?", "帮助"}, hint{"q", "退出"})
+	var hs []hint
+	if m.focus == focusTree {
+		hs = []hint{{"↑↓", "选来源"}, {"→", "进入榜单"}, sub, {m.menuKeys(), "分类"}, {"/", "搜索"}}
+	} else {
+		hs = []hint{{"↑↓", "移动"}, {"←", "来源"}, sub, {"↵", "打开"}}
+		if m.inMonitor() {
+			hs = append(hs, m.unreadHint())
+		}
+		if m.searchQ != "" {
+			hs = append(hs, hint{"esc", "返回榜单"})
+		}
+		hs = append(hs, hint{"空格", "详情"}, hint{m.menuKeys(), "分类"}, hint{"/", "搜索"})
+	}
+	out := hs[:0]
+	for _, h := range hs {
+		if h.key != "" {
+			out = append(out, h)
+		}
+	}
+	return out
 }
+
+// fixedHints 始终显示在最右侧，不因宽度不足被去掉。
+var fixedHints = []hint{{"?", "帮助"}, {"q", "退出"}}
 
 // inFollowMenu 表示当前在“订阅”菜单。
 func (m *model) inFollowMenu() bool {
@@ -778,7 +774,7 @@ func (m *model) statusLine() string {
 	case m.newVer != "":
 		mid, midStyle = "↑ 新版本 "+m.newVer+"，运行 rebang update 升级", styleHeader
 	}
-	// 按宽度从右往左丢弃提示，保证状态与消息可见。
+	// 按宽度从后往前丢弃提示，保证状态与消息可见；“? 帮助”“q 退出”始终保留。
 	hs := m.hints()
 	render := func(hs []hint) (string, int) {
 		parts := make([]string, len(hs))
@@ -786,6 +782,13 @@ func (m *model) statusLine() string {
 		for i, h := range hs {
 			parts[i] = barHint(h.key, h.label)
 			plain += runewidth.StringWidth(h.key) + 1 + runewidth.StringWidth(h.label)
+		}
+		if m.det == nil {
+			for _, h := range fixedHints {
+				parts = append(parts, barHint(h.key, h.label))
+				plain += runewidth.StringWidth(h.key) + 1 + runewidth.StringWidth(h.label)
+			}
+			hs = append(hs[:len(hs):len(hs)], fixedHints...)
 		}
 		if len(hs) > 1 {
 			plain += 2 * (len(hs) - 1)
@@ -797,9 +800,9 @@ func (m *model) statusLine() string {
 		left = runewidth.Truncate(left, m.width-2, "…")
 		lw = runewidth.StringWidth(left)
 	}
-	if !m.wide() && len(hs) > 0 {
-		// 单栏时必须留出第一个提示（tab 来源），账号信息让位。
-		_, w1 := render(hs[:1])
+	{
+		// 必须留出第一个提示与“? 帮助”“q 退出”，账号信息让位。
+		_, w1 := render(hs[:min(1, len(hs))])
 		if room := m.width - w1 - 6; lw > room && room > 0 {
 			left = runewidth.Truncate(left, room, "…")
 			lw = runewidth.StringWidth(left)
@@ -815,7 +818,7 @@ func (m *model) statusLine() string {
 		hs = hs[:len(hs)-1]
 		hintStr, hw = render(hs)
 	}
-	if len(hs) == 0 {
+	if hintStr == "" {
 		hw = -2
 	}
 	avail := m.width - lw - hw - 6
@@ -827,7 +830,7 @@ func (m *model) statusLine() string {
 	}
 	gap := avail - runewidth.StringWidth(mid)
 	sep := ""
-	if len(hs) > 0 {
+	if hintStr != "" {
 		sep = "  "
 	}
 	line := barText(styleBar, " ") + barText(leftStyle, left) + barText(styleBar, "  ") + barText(midStyle, mid) + barText(styleBar, spaces(gap)+sep) + hintStr
@@ -841,8 +844,8 @@ var helpKeys = []struct {
 	group string
 	keys  []hint
 }{
-	{"浏览", []hint{{"↑ ↓  j k", "在当前栏上下移动，左栏停下后自动加载"}, {"← →  h l", "切换子榜单"}, {"J K  ⇧↑ ⇧↓", "在榜单中切换上一个、下一个来源"}, {"0-9  [ ]", "切换分类，0 为订阅"}, {"tab", "切换左右栏；单栏时打开来源列表"}, {"g G  PgUp PgDn", "开头、结尾、翻页"}}},
-	{"操作", []hint{{"回车", "左栏进入列表；列表中在浏览器打开；来源列表中切换来源"}, {"空格", "详情与 AI 总结（" + insightMark + " 表示有总结）"}, {"p", "打开或关闭底部预览（双栏且至少 24 行时显示）"}, {"u", "内容监控中切换全部、只看未读"}, {"esc", "列表返回左栏；来源列表返回榜单；搜索时返回榜单"}, {"/  y  r", "搜索、复制链接、刷新"}, {"?  q", "帮助、退出"}}},
+	{"浏览", []hint{{"↑ ↓  j k", "在当前栏上下移动；左栏移动时榜单跟着切换"}, {"←  h", "去左栏选来源（单栏时打开来源列表）"}, {"→  l", "回到榜单（左栏回车同样）"}, {"tab  ⇧tab", "切换子榜单，到头后回到另一端"}, {"0-9  [ ]", "切换分类，0 为订阅"}, {"g G  PgUp PgDn", "开头、结尾、翻页"}}},
+	{"操作", []hint{{"回车", "榜单中在浏览器打开"}, {"空格", "详情与 AI 总结（" + insightMark + " 表示有总结）"}, {"p", "打开或关闭底部预览（双栏且至少 24 行时显示）"}, {"u", "内容监控中切换全部、只看未读"}, {"esc", "退出搜索、帮助与搜索结果"}, {"/  y  r", "搜索、复制链接、刷新"}, {"?  q", "帮助、退出"}}},
 }
 
 func (m *model) helpBody(w, h int) []string {

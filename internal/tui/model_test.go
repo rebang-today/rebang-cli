@@ -251,6 +251,8 @@ func key(t *testing.T, m *model, keys ...string) {
 			msg = tea.KeyMsg{Type: tea.KeyEsc}
 		case "tab":
 			msg = tea.KeyMsg{Type: tea.KeyTab}
+		case "shift+tab":
+			msg = tea.KeyMsg{Type: tea.KeyShiftTab}
 		case "up":
 			msg = tea.KeyMsg{Type: tea.KeyUp}
 		case "down":
@@ -344,12 +346,30 @@ func TestLeftMoveDebouncedLoad(t *testing.T) {
 		t.Fatalf("列表回车应打开链接，opened=%q", opened)
 	}
 	key(t, m, "esc")
-	if m.focus != focusTree {
-		t.Fatal("列表中 Esc 应回到左栏")
-	}
-	key(t, m, "tab")
 	if m.focus != focusList {
-		t.Fatal("tab 应切换到列表")
+		t.Fatal("列表中 Esc 不应切到左栏")
+	}
+	key(t, m, "right", "l")
+	if m.focus != focusList || m.listCur != 0 {
+		t.Fatal("榜单中 → 不做任何事")
+	}
+	key(t, m, "left")
+	if m.focus != focusTree {
+		t.Fatal("← 应回到左栏")
+	}
+	n = len(f.listCalls)
+	key(t, m, "h", "left")
+	if m.focus != focusTree || len(f.listCalls) != n {
+		t.Fatal("左栏中 ← 不做任何事")
+	}
+	key(t, m, "l")
+	if m.focus != focusList || len(f.listCalls) != n {
+		t.Fatal("→ 应回到榜单；没有等待中的加载时不请求")
+	}
+	// 左栏移动后马上按 →：立即加载，不等防抖。
+	key(t, m, "h", "k", "right")
+	if m.focus != focusList || m.debPending || m.target.tab != "zhihu" || len(f.listCalls) != n+1 {
+		t.Fatalf("→ 应立即加载：target=%+v calls=%v", m.target, f.listCalls[n:])
 	}
 }
 
@@ -365,24 +385,35 @@ func TestEnterSkipsDebounce(t *testing.T) {
 func TestSubTabSwitch(t *testing.T) {
 	f := newFake()
 	m := start(t, f, Options{})
-	key(t, m, "l")
-	if m.target.tab != "zhihu" || m.subIdx != 0 {
-		t.Fatal("没有子榜单时 ←→ 不应有变化")
+	n := len(f.listCalls)
+	key(t, m, "tab", "shift+tab")
+	if m.target.tab != "zhihu" || m.subIdx != 0 || len(f.listCalls) != n {
+		t.Fatal("没有子榜单时 tab 不应有变化")
 	}
-	key(t, m, "j", "enter", "right")
+	key(t, m, "j", "enter", "tab")
 	if m.target.subTab != "news" || m.items[0].title != "微博要闻" || m.focus != focusList {
-		t.Fatalf("右栏中 → 应切换子榜单，target=%+v", m.target)
+		t.Fatalf("榜单中 tab 应切换子榜单，target=%+v", m.target)
 	}
-	key(t, m, "right")
+	key(t, m, "tab")
+	if m.target.subTab != "hot" {
+		t.Fatal("最后一个子榜单再按 tab 应回到第一个")
+	}
+	key(t, m, "shift+tab")
 	if m.target.subTab != "news" {
-		t.Fatal("最后一个子榜单再按 → 应停住")
+		t.Fatal("第一个子榜单按 shift+tab 应到最后一个")
 	}
-	key(t, m, "esc", "h")
+	key(t, m, "left", "shift+tab")
 	if m.target.subTab != "hot" || m.focus != focusTree {
-		t.Fatalf("左栏中 ← 也应切换子榜单，target=%+v", m.target)
+		t.Fatalf("左栏中 tab 也应切换子榜单，target=%+v", m.target)
 	}
+	// 不再用 ←→ 切换子榜单。
+	key(t, m, "right", "right", "left")
+	if m.target.subTab != "hot" {
+		t.Fatalf("←→ 不应切换子榜单：%+v", m.target)
+	}
+	key(t, m, "tab")
 	// 子榜单按来源记住。
-	key(t, m, "l", "k")
+	key(t, m, "k")
 	settle(t, m)
 	key(t, m, "j")
 	settle(t, m)
@@ -394,7 +425,7 @@ func TestSubTabSwitch(t *testing.T) {
 func TestMenuSwitchRestoresPosition(t *testing.T) {
 	f := newFake()
 	m := start(t, f, Options{})
-	key(t, m, "j", "l") // → 立即加载，取消等待中的延迟
+	key(t, m, "j", "tab") // 切换子榜单立即加载，取消等待中的延迟
 	if m.debPending || m.target.subTab != "news" {
 		t.Fatalf("target=%+v", m.target)
 	}
@@ -461,7 +492,7 @@ func TestOpenCopyAndRefresh(t *testing.T) {
 		Open: func(u string) error { opened = u; return nil },
 		Copy: func(u string) error { copied = u; return nil },
 	})
-	key(t, m, "tab", "j", "enter")
+	key(t, m, "l", "j", "enter")
 	if opened != "https://example.com/z2" {
 		t.Fatalf("打开的链接 = %q", opened)
 	}
@@ -584,8 +615,8 @@ func TestNarrowLayout(t *testing.T) {
 	if strings.Contains(v, "│") || !strings.Contains(v, "知乎第一") || strings.Contains(v, "微博") || m.focus != focusList {
 		t.Fatalf("48 列单栏启动时应显示榜单\n%s", v)
 	}
-	if !strings.Contains(v, "tab 来源") || !strings.Contains(m.statusLine(), "tab 来源") {
-		t.Fatalf("单栏底部提示应包含 tab 来源\n%s", v)
+	if st := golden.StripANSI(m.statusLine()); !strings.Contains(st, "? 帮助  q 退出") {
+		t.Fatalf("单栏底部提示应保留 ? 与 q\n%s", v)
 	}
 	if strings.Contains(v, "1234万") {
 		t.Fatalf("单栏放不下热度时应隐藏热度列\n%s", v)
@@ -595,43 +626,53 @@ func TestNarrowLayout(t *testing.T) {
 		t.Fatal("↑↓ 应在榜单里移动")
 	}
 
-	// Tab 打开来源列表，Esc 只返回、不切换。
-	key(t, m, "tab")
+	// ← 打开整栏的来源列表；↑↓ 实时切换来源（防抖）；→ 回到榜单。
+	key(t, m, "left")
 	if v := m.View(); !strings.Contains(v, "微博") || strings.Contains(v, "知乎第一") || !m.picking() {
-		t.Fatalf("tab 应打开来源列表\n%s", v)
+		t.Fatalf("← 应打开来源列表\n%s", v)
+	}
+	if st := golden.StripANSI(m.statusLine()); !strings.Contains(st, "↑↓ 选来源") {
+		t.Fatalf("来源列表的提示：%s", st)
 	}
 	calls := len(f.listCalls)
-	key(t, m, "j", "esc")
-	if m.picking() || m.srcCur != 0 || m.target.tab != "zhihu" || len(f.listCalls) != calls {
-		t.Fatalf("Esc 不应切换来源，src=%d target=%+v", m.srcCur, m.target)
+	key(t, m, "j")
+	if !m.debPending || m.target.tab != "weibo" {
+		t.Fatalf("↑↓ 应实时切换来源，target=%+v", m.target)
 	}
-	if v := m.View(); !strings.Contains(v, "知乎第一") {
-		t.Fatalf("Esc 应回到榜单\n%s", v)
+	key(t, m, "right")
+	if m.picking() || m.debPending || m.target.tab != "weibo" || m.items[0].title != "微博热搜" || len(f.listCalls) != calls+1 {
+		t.Fatalf("→ 应回到榜单并立即加载，target=%+v", m.target)
 	}
-
-	// 回车切换到选中的来源并加载，回到榜单。
-	key(t, m, "tab", "j", "enter")
+	key(t, m, "left", "k")
+	settle(t, m)
+	key(t, m, "esc")
+	if !m.picking() || m.target.tab != "zhihu" {
+		t.Fatal("Esc 不关闭来源列表，已切换的来源不恢复")
+	}
+	// 回车同样回到榜单。
+	key(t, m, "j", "enter")
 	if m.picking() || m.target.tab != "weibo" || m.items[0].title != "微博热搜" {
-		t.Fatalf("回车应切换来源，target=%+v", m.target)
+		t.Fatalf("回车应回到榜单，target=%+v", m.target)
 	}
 	v = m.View()
 	if !strings.Contains(v, "微博") || !strings.Contains(v, "热搜") || !strings.Contains(v, "要闻") || !strings.Contains(v, "微博热搜") {
 		t.Fatalf("标题行应显示来源名，子榜单条照常显示\n%s", v)
 	}
-	key(t, m, "l")
+	key(t, m, "tab")
 	if m.target.subTab != "news" {
-		t.Fatalf("←→ 应切换子榜单，target=%+v", m.target)
+		t.Fatalf("tab 应切换子榜单，target=%+v", m.target)
 	}
 	key(t, m, "2")
 	if m.menuIdx != 2 || m.picking() || m.target.node != "n1" {
 		t.Fatalf("数字键应切换分类，menu=%d target=%+v", m.menuIdx, m.target)
 	}
 
-	// 来源列表里切换分类：关闭来源列表后切换。
-	key(t, m, "tab", "1")
-	if m.picking() || m.menuIdx != 1 {
+	// 来源列表里切换分类：留在来源列表。
+	key(t, m, "left", "1")
+	if !m.picking() || m.menuIdx != 1 {
 		t.Fatalf("来源列表中按数字键应切换分类，menu=%d", m.menuIdx)
 	}
+	key(t, m, "right")
 
 	// 56 列及以上仍为双栏。
 	m.Update(tea.WindowSizeMsg{Width: 56, Height: 12})
@@ -660,9 +701,9 @@ func TestTruncation(t *testing.T) {
 	key(t, m, "4", "j")
 	settle(t, m)
 	for i := 0; i < 6; i++ {
-		key(t, m, "l")
+		key(t, m, "tab")
 	}
-	key(t, m, "tab")
+	key(t, m, "l")
 	v := m.View()
 	for i, line := range strings.Split(v, "\n") {
 		if w := lipgloss.Width(line); w != 60 {
@@ -769,7 +810,7 @@ func TestWechatDefaultsToHotWhenLoggedOut(t *testing.T) {
 		}
 	}
 	// 手动切到关注不会被改回。
-	key(t, m, "h")
+	key(t, m, "tab")
 	if m.target.subTab != "following" || len(m.items) != 0 || !strings.Contains(m.View(), "暂无内容") {
 		t.Fatalf("手动选中的关注应照常显示，target=%+v", m.target)
 	}
@@ -796,7 +837,7 @@ func TestWechatFallsBackWhenFollowingEmpty(t *testing.T) {
 		t.Fatalf("应记住热门，calls=%v", f.listCalls)
 	}
 	// 手动切到关注，即使为空也不改回。
-	key(t, m, "h")
+	key(t, m, "shift+tab")
 	if m.target.subTab != "following" || len(m.items) != 0 {
 		t.Fatalf("手动选中的关注不应被改回，target=%+v", m.target)
 	}
@@ -828,13 +869,16 @@ func TestSingleSubTabHidden(t *testing.T) {
 		t.Fatalf("请求时应带上唯一子榜单的 key，target=%+v", m.target)
 	}
 	v := m.View()
-	if m.hasStrip() || strings.Contains(v, "唯一") || strings.Contains(v, "←→") {
-		t.Fatalf("只有一个子榜单时不显示子榜单条与 ←→ 提示\n%s", v)
+	if m.hasStrip() || strings.Contains(v, "唯一") || strings.Contains(v, "tab 子榜") {
+		t.Fatalf("只有一个子榜单时不显示子榜单条与 tab 提示\n%s", v)
 	}
 	n := len(f.listCalls)
-	key(t, m, "l", "h")
+	key(t, m, "tab", "shift+tab", "l", "tab")
 	if len(f.listCalls) != n || m.target.subTab != "only" {
-		t.Fatalf("←→ 不应有任何动作，calls=%v", f.listCalls[n:])
+		t.Fatalf("tab 不应有任何动作，calls=%v", f.listCalls[n:])
+	}
+	if v := m.View(); strings.Contains(v, "tab 子榜") {
+		t.Fatalf("榜单焦点也不显示 tab 提示\n%s", v)
 	}
 }
 
@@ -885,9 +929,9 @@ func TestFollowMenu(t *testing.T) {
 	if v := m.View(); !strings.Contains(v, "0 订阅") || !strings.Contains(v, "监控") || !strings.Contains(v, "要闻") {
 		t.Fatalf("订阅菜单应列出订阅的 Tab 与子榜单\n%s", v)
 	}
-	key(t, m, "l")
+	key(t, m, "tab")
 	if m.target.subTab != "news" || m.focus != focusTree {
-		t.Fatalf("→ 应切换子榜单，target=%+v", m.target)
+		t.Fatalf("tab 应切换子榜单，target=%+v", m.target)
 	}
 	// 内容监控没有计划：提示去网站创建，不崩溃。
 	key(t, m, "j")
@@ -895,10 +939,10 @@ func TestFollowMenu(t *testing.T) {
 	if m.loading || m.listErr != "" || !strings.HasPrefix(m.listNotice, "还没有监控计划") {
 		t.Fatalf("内容监控没有计划时应提示，target=%+v err=%q notice=%q", m.target, m.listErr, m.listNotice)
 	}
-	if v := m.View(); strings.Contains(v, "←→") {
+	if v := m.View(); strings.Contains(v, "tab 子榜") {
 		t.Fatalf("没有计划时不显示子榜单\n%s", v)
 	}
-	key(t, m, "r", "l")
+	key(t, m, "r", "tab")
 	if !strings.HasPrefix(m.listNotice, "还没有监控计划") || m.listErr != "" {
 		t.Fatalf("在内容监控上按键不应出错，err=%q", m.listErr)
 	}
@@ -1009,83 +1053,89 @@ func threeSources() *fakeSource {
 	return f
 }
 
-func TestSwitchSourceFromList(t *testing.T) {
+// TestLeftPaneLiveSwitch 左栏 ↑↓ 时右栏实时跟着切换，停下防抖后只请求一次；到首尾停住。
+func TestLeftPaneLiveSwitch(t *testing.T) {
 	f := threeSources()
 	m := start(t, f, Options{})
-	key(t, m, "tab")
-	if m.focus != focusList {
-		t.Fatal("应在榜单焦点")
-	}
-	// 首个来源上按 K 停住，不循环、不请求。
 	n := len(f.listCalls)
-	key(t, m, "K")
+	key(t, m, "k")
 	if m.srcCur != 0 || m.debPending || len(f.listCalls) != n {
-		t.Fatalf("第一个来源上应停住：cur=%d calls=%v", m.srcCur, f.listCalls[n:])
+		t.Fatalf("第一个来源上应停住：cur=%d", m.srcCur)
 	}
-	// J 与 shift+↓ 连续切换，左栏同步移动，焦点留在榜单，防抖后只请求一次。
-	key(t, m, "J", "shift+down")
-	if m.srcCur != 2 || m.focus != focusList || len(f.listCalls) != n {
-		t.Fatalf("应移到第三个来源且尚未请求：cur=%d focus=%v calls=%v", m.srcCur, m.focus, f.listCalls[n:])
+	key(t, m, "j", "down")
+	if m.srcCur != 2 || m.focus != focusTree || len(f.listCalls) != n || len(m.items) != 0 || m.target.tab != "douyin" {
+		t.Fatalf("应移到第三个来源、清空右栏且尚未请求：cur=%d calls=%v", m.srcCur, f.listCalls[n:])
 	}
-	settle(t, m)
-	if len(f.listCalls) != n+1 || f.listCalls[n] != "|douyin|" || m.items[0].title != "抖音第一" || m.focus != focusList {
-		t.Fatalf("防抖后应只加载最后停下的来源：%v focus=%v", f.listCalls[n:], m.focus)
-	}
-	// 最后一个来源上按 J 停住。
-	n = len(f.listCalls)
-	key(t, m, "J", "shift+down")
-	if m.srcCur != 2 || m.debPending || len(f.listCalls) != n {
-		t.Fatalf("最后一个来源上应停住：cur=%d", m.srcCur)
-	}
-	// K 与 shift+↑ 往回切换。
-	key(t, m, "shift+up")
-	settle(t, m)
-	if m.srcCur != 1 || m.target.tab != "weibo" || m.focus != focusList {
-		t.Fatalf("shift+↑ 应切到上一个来源：cur=%d target=%+v", m.srcCur, m.target)
-	}
-	key(t, m, "K")
-	settle(t, m)
-	if m.srcCur != 0 || m.target.tab != "zhihu" {
-		t.Fatalf("K 应切到上一个来源：cur=%d", m.srcCur)
-	}
-	if s := golden.StripANSI(m.statusLine()); !strings.Contains(s, "J/K 换来源") {
-		t.Fatalf("宽屏榜单焦点应提示 J/K 换来源\n%s", s)
-	}
-
-	// 左栏焦点下与 ↑↓ 相同。
-	key(t, m, "tab")
-	key(t, m, "J")
-	if m.srcCur != 1 || m.focus != focusTree || !m.debPending {
-		t.Fatalf("左栏 J 应与 ↓ 相同：cur=%d focus=%v", m.srcCur, m.focus)
+	if v := plainView(m); !strings.Contains(v, "抖音") || strings.Contains(v, "知乎第一") {
+		t.Fatalf("右栏标题应跟着切换\n%s", v)
 	}
 	settle(t, m)
-	key(t, m, "shift+up")
-	if m.srcCur != 0 || m.focus != focusTree {
-		t.Fatalf("左栏 shift+↑ 应与 ↑ 相同：cur=%d", m.srcCur)
+	if len(f.listCalls) != n+1 || f.listCalls[n] != "|douyin|" || m.items[0].title != "抖音第一" || m.focus != focusTree {
+		t.Fatalf("防抖后应只加载最后停下的来源：%v", f.listCalls[n:])
 	}
 }
 
-func TestSwitchSourceNarrow(t *testing.T) {
+// TestRemovedKeys J、K 与 shift+↑↓ 已删除，不再切换来源。
+func TestRemovedKeys(t *testing.T) {
 	f := threeSources()
 	m := start(t, f, Options{})
+	key(t, m, "l")
+	n := len(f.listCalls)
+	key(t, m, "J", "shift+down", "K", "shift+up", "J")
+	if m.srcCur != 0 || m.target.tab != "zhihu" || len(f.listCalls) != n || m.focus != focusList || m.listCur != 0 {
+		t.Fatalf("已删除的键不应有效果：cur=%d list=%d calls=%v", m.srcCur, m.listCur, f.listCalls[n:])
+	}
 	m.Update(tea.WindowSizeMsg{Width: 48, Height: 12})
-	if m.wide() || m.picking() {
-		t.Fatal("应为单栏榜单")
+	key(t, m, "J", "tab")
+	if m.picking() || m.srcCur != 0 {
+		t.Fatal("单栏下 J、tab 不应打开来源列表")
 	}
-	key(t, m, "J")
-	if m.picking() || m.srcCur != 1 {
-		t.Fatalf("单栏 J 不应打开来源列表：cur=%d", m.srcCur)
-	}
-	if v := plainView(m); !strings.Contains(strings.Split(v, "\n")[1], "微博") {
-		t.Fatalf("标题行应显示新的来源名\n%s", v)
-	}
+}
+
+// TestHints 底部提示分左栏、榜单两种；放不下时从后往前去掉，? 与 q 始终保留。
+func TestHints(t *testing.T) {
+	f := newFake()
+	m := start(t, f, Options{})
+	m.Update(tea.WindowSizeMsg{Width: 160, Height: 20})
+	key(t, m, "j")
 	settle(t, m)
-	if m.target.tab != "weibo" || m.items[0].title != "微博热搜" {
-		t.Fatalf("应加载微博：%+v", m.target)
+	st := func() string { return strings.TrimSpace(golden.StripANSI(m.statusLine())) }
+	if want := "↑↓ 选来源  → 进入榜单  tab 子榜  0-2 分类  / 搜索  ? 帮助  q 退出"; !strings.HasSuffix(st(), want) {
+		t.Fatalf("左栏提示：%q", st())
 	}
-	// 来源列表里 J/K 只移动选择。
-	key(t, m, "tab", "J")
-	if !m.picking() || m.srcCur != 2 {
-		t.Fatalf("来源列表中 J 应移动选择：cur=%d", m.srcCur)
+	key(t, m, "l")
+	if want := "↑↓ 移动  ← 来源  tab 子榜  ↵ 打开  空格 详情  0-2 分类  / 搜索  ? 帮助  q 退出"; !strings.HasSuffix(st(), want) {
+		t.Fatalf("榜单提示：%q", st())
+	}
+	// 只有一个子榜单时不显示 tab。
+	key(t, m, "h", "k")
+	settle(t, m)
+	if strings.Contains(st(), "tab") {
+		t.Fatalf("没有子榜单时不显示 tab：%q", st())
+	}
+	// 搜索结果里多一个 esc。
+	key(t, m, "/", "x", "enter")
+	if !strings.Contains(st(), "↵ 打开  esc 返回榜单") {
+		t.Fatalf("搜索结果提示：%q", st())
+	}
+	// 窄窗口：从后往前去掉，? 与 q 保留。
+	key(t, m, "esc", "h", "j")
+	settle(t, m)
+	key(t, m, "l")
+	for _, w := range []int{100, 80, 60, 56, 48, 40} {
+		m.Update(tea.WindowSizeMsg{Width: w, Height: 20})
+		s := st()
+		if !strings.HasSuffix(s, "? 帮助  q 退出") || lipgloss.Width(m.statusLine()) != w {
+			t.Fatalf("%d 列应保留 ? 与 q：%q", w, s)
+		}
+		all := []string{"↑↓ 移动", "← 来源", "tab 子榜", "↵ 打开", "空格 详情", "0-2 分类", "/ 搜索"}
+		gone := false
+		for _, h := range all {
+			has := strings.Contains(s, h)
+			if has && gone {
+				t.Fatalf("%d 列应从后往前去掉：%q", w, s)
+			}
+			gone = gone || !has
+		}
 	}
 }

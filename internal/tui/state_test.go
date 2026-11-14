@@ -33,8 +33,8 @@ func TestStateRestoresAcrossMenus(t *testing.T) {
 	m := start(t, f, Options{StatePath: path})
 	key(t, m, "j") // 综合 › 微博
 	settle(t, m)
-	key(t, m, "l", "l") // 文娱
-	key(t, m, "2", "j") // 科技 › 爱范儿
+	key(t, m, "tab", "tab") // 文娱
+	key(t, m, "2", "j")     // 科技 › 爱范儿
 	settle(t, m)
 	if m.target.tab != "ifanr" {
 		t.Fatalf("target=%+v", m.target)
@@ -75,8 +75,8 @@ func TestStateFallsBackWhenKeysGone(t *testing.T) {
 	m := start(t, stateFake(), Options{StatePath: path})
 	key(t, m, "j")
 	settle(t, m)
-	key(t, m, "l", "l") // 微博·文娱
-	key(t, m, "2", "j") // 科技 › 爱范儿
+	key(t, m, "tab", "tab") // 微博·文娱
+	key(t, m, "2", "j")     // 科技 › 爱范儿
 	settle(t, m)
 	quit(m)
 
@@ -184,17 +184,18 @@ func containsAll(s string, subs ...string) bool {
 	return true
 }
 
-func TestStateIgnoresUnconfirmedPick(t *testing.T) {
+func TestStateNarrowPick(t *testing.T) {
 	path := filepath.Join(t.TempDir(), stateFileName)
 	m := start(t, stateFake(), Options{StatePath: path})
 	m.Update(tea.WindowSizeMsg{Width: 48, Height: 12})
-	key(t, m, "tab", "j")
+	key(t, m, "left", "j")
 	if !m.picking() || m.srcCur != 1 {
 		t.Fatal("应打开来源列表并移动光标")
 	}
+	// 单栏来源列表里 ↑↓ 即切换来源，不需要确认。
 	quit(m)
-	if s := loadPosState(path); s.Sources["1"] == "t:weibo" {
-		t.Fatalf("未确认的来源不应保存，got %+v", s)
+	if s := loadPosState(path); s.Sources["1"] != "t:weibo" {
+		t.Fatalf("移动后的来源应保存，got %+v", s)
 	}
 	if !m.picking() || m.srcCur != 1 {
 		t.Fatal("保存不应改变界面状态")

@@ -77,7 +77,7 @@ func TestInsightMarkers(t *testing.T) {
 	f4.shortsErr = errs.Unauthorized("")
 	m4 := start(t, f4, Options{LoggedIn: true, Now: fixedNow})
 	f4.shortsErr = nil
-	key(t, m4, "tab", "j")
+	key(t, m4, "l", "j")
 	if !m4.expired || len(f4.shortsCalls) != 1 {
 		t.Fatalf("401 后不应再请求：%v %v", m4.expired, f4.shortsCalls)
 	}
@@ -95,7 +95,7 @@ func TestPreviewContent(t *testing.T) {
 	f := insightFake()
 	m := start(t, f, Options{LoggedIn: true, Now: fixedNow})
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
-	key(t, m, "tab")
+	key(t, m, "l")
 	v := plainView(m)
 	for _, s := range []string{"知乎 · 08:05 · 100万", "AI 总结 一句话总结第一条", "───"} {
 		if !strings.Contains(v, s) {
@@ -229,7 +229,7 @@ func TestDetailStates(t *testing.T) {
 	}
 
 	// 404：暂无 AI 总结。
-	key(t, m, "esc", "tab", "j", " ")
+	key(t, m, "esc", "l", "j", " ")
 	if v := plainView(m); !strings.Contains(v, "暂无 AI 总结") || !strings.Contains(v, "第二条的描述") {
 		t.Fatalf("没有总结时应提示\n%s", v)
 	}
@@ -339,26 +339,4 @@ func TestShortTime(t *testing.T) {
 			t.Errorf("%q → %q want %q", in, got, want)
 		}
 	}
-}
-
-func TestWideHintsShowDetail(t *testing.T) {
-	f := newFake()
-	f.account = &cli.AccountView{ID: 1, Email: "a-very-long-address@example.com", IsMember: true, MemberExpiresAt: "2027-01-01T00:00:00+08:00"}
-	m := newModel(Options{Source: f, Version: "0.1.0", LoggedIn: true})
-	m.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
-	drain(t, m, m.Init())
-	check := func(where string) {
-		t.Helper()
-		s := golden.StripANSI(m.statusLine())
-		i, j := strings.Index(s, "空格 详情"), strings.Index(s, "/ 搜索")
-		if i < 0 || (j >= 0 && j < i) {
-			t.Fatalf("%s：宽屏底部应显示「空格 详情」且排在「/ 搜索」之前\n%s", where, s)
-		}
-	}
-	if m.focus != focusTree {
-		t.Fatalf("启动焦点应在左栏：%v", m.focus)
-	}
-	check("左栏")
-	key(t, m, "tab")
-	check("列表")
 }

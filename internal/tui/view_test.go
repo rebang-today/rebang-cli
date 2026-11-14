@@ -33,14 +33,14 @@ func TestViewGolden(t *testing.T) {
 	f := newFake()
 	m := start(t, f, Options{Now: fixedNow})
 	section("双栏·左栏焦点 90x10", snapshot(m, 90, 10))
-	key(t, m, "tab")
+	key(t, m, "l")
 	section("双栏·列表焦点 90x10", snapshot(m, 90, 10))
-	key(t, m, "esc", "j", "enter", "l")
+	key(t, m, "h", "j", "enter", "tab")
 	section("子榜单条 90x10", snapshot(m, 90, 10))
 	section("单栏·榜单 48x10", snapshot(m, 48, 10))
-	key(t, m, "tab")
+	key(t, m, "left")
 	section("单栏·来源列表 48x10", snapshot(m, 48, 10))
-	key(t, m, "esc")
+	key(t, m, "right")
 	section("窗口太小 39x10", snapshot(m, 39, 10))
 	key(t, m, "2")
 	section("切换分类 90x10", snapshot(m, 90, 10))
@@ -123,7 +123,7 @@ func TestTinyWindowsDoNotPanic(t *testing.T) {
 				}
 			}
 			check("初始")
-			for _, k := range []string{"down", "right", "2", "tab", "down", "esc", "0", "?", "?", "1", " ", "G", "j", "k", "g", "?", " ", "p", "p"} {
+			for _, k := range []string{"down", "right", "2", "tab", "left", "down", "esc", "0", "?", "?", "1", "l", " ", "G", "j", "k", "g", "?", " ", "p", "p", "shift+tab"} {
 				key(t, m, k)
 				check(k)
 			}
