@@ -154,7 +154,9 @@ main() {
 		say "  export PATH=\"$INSTALL_DIR:\$PATH\""
 		;;
 	esac
-	if ! "$INSTALL_DIR/rebang" version >/dev/null 2>&1; then
+	# 运行新装的程序时一律带 TERM=dumb：程序启动时（bubbletea 的 init）会在输出是终端时
+	# 向终端查询背景色与光标位置；curl | sh 下终端的应答可能残留到用户的 shell 提示符。
+	if ! TERM=dumb "$INSTALL_DIR/rebang" version >/dev/null 2>&1; then
 		say "提示：程序已安装，但无法运行，请检查系统与架构。"
 		return
 	fi
@@ -163,7 +165,7 @@ main() {
 	if [ "$skill" = yes ]; then
 		say ""
 		# 结果输出到终端；失败不影响程序安装。
-		"$INSTALL_DIR/rebang" skill install -o table >&2 || say "Agent Skill 安装失败，稍后可运行 rebang skill install 重试。"
+		TERM=dumb "$INSTALL_DIR/rebang" skill install -o table >&2 || say "Agent Skill 安装失败，稍后可运行 rebang skill install 重试。"
 	fi
 	say ""
 	say "开始使用："
