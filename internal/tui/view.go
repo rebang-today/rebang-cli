@@ -191,18 +191,44 @@ type seg struct {
 
 // strip 把若干标签排成一行，放不下时以 cur 为中心截断，两端显示 ‹ ›。
 // 每项左右各留 1 列空白；x0 是第一列的横坐标。
-func strip(labels []string, cur, x0, avail int) (segs []seg, left, right bool) {
+// stripWidths 返回横排各项（两侧各加 1 个空格）的显示宽度。
+func stripWidths(labels []string) []int {
+	ws := make([]int, len(labels))
+	for i, l := range labels {
+		ws[i] = runewidth.StringWidth(" " + l + " ")
+	}
+	return ws
+}
+
+// strip 排布一行横排项。start < 0 时以 cur 为中心开窗；否则从 start 开始（鼠标滚轮平移过）。
+func strip(labels []string, cur, start, x0, avail int) (segs []seg, left, right bool) {
 	if len(labels) == 0 || avail <= 0 {
 		return nil, false, false
 	}
 	texts := make([]string, len(labels))
-	ws := make([]int, len(labels))
+	ws := stripWidths(labels)
 	for i, l := range labels {
 		texts[i] = " " + l + " "
-		ws[i] = runewidth.StringWidth(texts[i])
 	}
 	cur = clampIdx(cur, len(labels))
-	lo, hi := window(ws, cur, avail)
+	var lo, hi int
+	if start >= 0 {
+		lo, hi = windowFrom(ws, start, avail)
+		left, right = lo > 0, hi < len(labels)-1
+		if hi < lo {
+			return nil, left, right
+		}
+		x := x0
+		if left {
+			x++
+		}
+		for i := lo; i <= hi; i++ {
+			segs = append(segs, seg{span{i, x, x + ws[i]}, texts[i]})
+			x += ws[i]
+		}
+		return segs, left, right
+	}
+	lo, hi = window(ws, cur, avail)
 	left, right = lo > 0, hi < len(labels)-1
 	room := avail
 	if left {
@@ -277,7 +303,8 @@ func (m *model) headerLayout() (segs []seg, left, right bool, info string) {
 	if info != "" {
 		avail -= runewidth.StringWidth(info) + 2
 	}
-	segs, left, right = strip(labels, m.menuIdx, x0, avail)
+	segs, left, right = strip(labels, m.menuIdx, m.menuWin.start(m.menuIdx, ""), x0, avail)
+	m.menuAvail = avail
 	return segs, left, right, info
 }
 
@@ -458,7 +485,7 @@ func (m *model) stripSegs(x0, w int) ([]seg, bool, bool) {
 			labels[i] += " " + s.note
 		}
 	}
-	return strip(labels, m.subIdx, x0+1, w-2)
+	return strip(labels, m.subIdx, m.subWin.start(m.subIdx, m.target.key()), x0+1, w-2)
 }
 
 func (m *model) stripSpans(x0 int) []span {
@@ -924,7 +951,7 @@ func (m *model) helpBody(w, h int) []string {
 		}
 		lines = append(lines, "")
 	}
-	lines = append(lines, styleDim.Render("鼠标：点击分类、榜单、子榜单切换；双击条目打开；滚轮滚动"), "", styleDim.Render("按任意键返回"))
+	lines = append(lines, styleDim.Render("鼠标：点击切换；双击打开；滚轮滚动指针所在区域，不改选中"), "", styleDim.Render("按任意键返回"))
 	// 窗口不够高时去掉空行。
 	if len(lines) > h {
 		compact := lines[:0:0]

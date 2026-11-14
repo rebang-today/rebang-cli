@@ -142,9 +142,12 @@ type model struct {
 	// pointerOn 表示已把鼠标指针切换为小手。
 	pointerOn bool
 	// 鼠标悬停的行，hoverOK 为 false 表示没有悬停。
-	hoverOK   bool
-	hoverPane focus
-	hoverIdx  int
+	// menuWin、subWin 是菜单栏与子榜单条被鼠标滚轮横向平移后的窗口；menuAvail 是菜单栏最近一次排布的可用宽度。
+	menuWin, subWin stripWin
+	menuAvail       int
+	hoverOK         bool
+	hoverPane       focus
+	hoverIdx        int
 
 	// 加载动画。
 	spin     int
@@ -1179,7 +1182,24 @@ const (
 	hitSub
 	hitSource
 	hitItem
+	hitPreview
 )
+
+// stripWin 记录横排（菜单栏、子榜单条）被滚轮平移后的起点。只在选中项与来源都没变时有效，
+// 用键盘切换后自动回到以选中项为中心。
+type stripWin struct {
+	on   bool
+	off  int
+	cur  int
+	from string
+}
+
+func (w stripWin) start(cur int, from string) int {
+	if w.on && w.cur == cur && w.from == from {
+		return w.off
+	}
+	return -1
+}
 
 // hitTest 把鼠标坐标换算为界面元素，与 View 的布局保持一致。
 func (m *model) hitTest(x, y int) hit {
@@ -1211,20 +1231,43 @@ func (m *model) hitTest(x, y int) hit {
 		}
 		return hit{pane: pane}
 	}
-	idx := m.listOff + y - 1 - m.rightHead()
-	if y-1 >= m.rightHead() && y-1-m.rightHead() < m.listHeight() && idx < len(m.items) {
+	if m.previewFull() {
+		if y >= 2 {
+			return hit{what: hitPreview, pane: pane}
+		}
+		return hit{pane: pane}
+	}
+	row := y - 1 - m.rightHead()
+	if ph := m.previewHeight(); ph > 0 && row >= m.listHeight() && row < m.listHeight()+ph {
+		return hit{what: hitPreview, pane: pane}
+	}
+	idx := m.listOff + row
+	if row >= 0 && row < m.listHeight() && idx < len(m.items) {
 		return hit{what: hitItem, idx: idx, pane: pane}
 	}
 	return hit{pane: pane}
 }
 
 func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
-	if m.tooSmall() || m.help || m.searching || m.previewFull() {
+	if m.tooSmall() || m.help || m.searching {
 		m.setPointer(false)
 		return nil
 	}
 	h := m.hitTest(ev.X, ev.Y)
-	m.setPointer(h.what != hitNone)
+	if m.previewFull() {
+		// 整栏预览只响应滚轮。
+		m.setPointer(false)
+		if h.what == hitPreview && ev.Action == tea.MouseActionPress {
+			switch ev.Button {
+			case tea.MouseButtonWheelUp:
+				m.scrollPreview(-wheelStep)
+			case tea.MouseButtonWheelDown:
+				m.scrollPreview(wheelStep)
+			}
+		}
+		return nil
+	}
+	m.setPointer(h.what != hitNone && h.what != hitPreview)
 	if ev.Action == tea.MouseActionMotion && ev.Button == tea.MouseButtonNone {
 		m.hoverOK = false
 		if h.what == hitSource || h.what == hitItem {
@@ -1233,19 +1276,41 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 		return nil
 	}
 	switch ev.Button {
-	case tea.MouseButtonWheelUp, tea.MouseButtonWheelDown:
-		if ev.Action != tea.MouseActionPress || ev.Y == 0 {
+	case tea.MouseButtonWheelUp, tea.MouseButtonWheelDown, tea.MouseButtonWheelLeft, tea.MouseButtonWheelRight:
+		if ev.Action != tea.MouseActionPress {
+			return nil
+		}
+		d := 1
+		if ev.Button == tea.MouseButtonWheelUp || ev.Button == tea.MouseButtonWheelLeft {
+			d = -1
+		}
+		// 指针在哪个区域就滚哪个区域，不改变选中项。
+		switch {
+		case ev.Y == 0:
+			m.panMenu(d)
+			return nil
+		case m.wide() || m.focus == focusList:
+			if pane, ok := m.paneAt(ev.X); ok && pane == focusList && m.hasStrip() && ev.Y == 2 {
+				m.panSub(d)
+				return nil
+			}
+		}
+		if h.what == hitPreview {
+			m.scrollPreview(d * wheelStep)
+			return nil
+		}
+		if ev.Button == tea.MouseButtonWheelLeft || ev.Button == tea.MouseButtonWheelRight {
 			return nil
 		}
 		pane, ok := m.paneAt(ev.X)
 		if !ok {
 			return nil
 		}
-		d := 3
-		if ev.Button == tea.MouseButtonWheelUp {
-			d = -3
+		m.scroll(pane, d*wheelStep)
+		// 滚动后指针下面换了一行，悬停高亮跟着实际的行。
+		if h2 := m.hitTest(ev.X, ev.Y); h2.what == hitSource || h2.what == hitItem {
+			m.hoverOK, m.hoverPane, m.hoverIdx = true, h2.pane, h2.idx
 		}
-		m.scroll(pane, d)
 		return nil
 	case tea.MouseButtonLeft:
 		if ev.Action != tea.MouseActionPress {
@@ -1258,10 +1323,21 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 	switch h.what {
 	case hitMenu:
 		if h.idx != m.menuIdx {
-			return m.enterMenu(h.idx)
+			// 点击后保持滚轮平移过的窗口，避免各项在指针下移动。
+			keep := m.menuWin.start(m.menuIdx, "") >= 0
+			cmd := m.enterMenu(h.idx)
+			if keep {
+				m.menuWin.cur = m.menuIdx
+			}
+			return cmd
 		}
 	case hitSub:
-		return m.setSub(h.idx)
+		keep := m.subWin.start(m.subIdx, m.target.key()) >= 0
+		cmd := m.setSub(h.idx)
+		if keep {
+			m.subWin.cur, m.subWin.from = m.subIdx, m.target.key()
+		}
+		return cmd
 	case hitSource:
 		if !m.wide() {
 			// 单栏的来源列表：点击即切换并回到榜单。
@@ -1294,9 +1370,57 @@ func (m *model) scroll(pane focus, d int) {
 		m.srcOff = clampOff(m.srcOff+d, n, h)
 		return
 	}
-	h := m.listHeight()
-	m.listOff = clampOff(m.listOff+d, len(m.items), h)
-	m.listCur = clampInto(m.listCur, m.listOff, h, len(m.items))
+	// 只滚动视窗，选中项不变（可以滚出视野）；之后按 ↑↓ 会从选中项继续移动并把视窗拉回来。
+	m.listOff = clampOff(m.listOff+d, len(m.items), m.listHeight())
+}
+
+// wheelStep 是滚轮每格滚动的行数。
+const wheelStep = 3
+
+// scrollPreview 按行滚动预览，到顶或到底停住，不回绕。
+func (m *model) scrollPreview(d int) {
+	w, h := m.previewBox()
+	if h <= 0 {
+		return
+	}
+	n := len(m.previewContent(w))
+	if n <= h {
+		return
+	}
+	m.pvOff = clampOff(m.pvOff+d, n, h-1) // 最后一行留给“↓ 更多”
+}
+
+// panMenu 用滚轮横向平移菜单栏，不切换分类。
+func (m *model) panMenu(d int) {
+	labels := m.menuLabels()
+	m.headerLayout() // 更新 menuAvail
+	m.menuWin = panStrip(m.menuWin, labels, m.menuIdx, "", m.menuAvail, d)
+}
+
+// panSub 用滚轮横向平移子榜单条，不切换子榜单。
+func (m *model) panSub(d int) {
+	subs := m.curSubs()
+	labels := make([]string, len(subs))
+	for i, s := range subs {
+		labels[i] = s.label
+		if s.note != "" {
+			labels[i] += " " + s.note
+		}
+	}
+	m.subWin = panStrip(m.subWin, labels, m.subIdx, m.target.key(), m.rightWidth()-2, d)
+}
+
+func panStrip(w stripWin, labels []string, cur int, from string, avail, d int) stripWin {
+	if len(labels) == 0 || avail <= 0 {
+		return w
+	}
+	ws := stripWidths(labels)
+	lo := w.start(cur, from)
+	if lo < 0 {
+		lo, _ = window(ws, clampIdx(cur, len(labels)), avail)
+	}
+	lo = max(min(lo+d, maxWindowLo(ws, avail)), 0)
+	return stripWin{on: true, off: lo, cur: cur, from: from}
 }
 
 func clampOff(off, n, h int) int {
@@ -1307,22 +1431,6 @@ func clampOff(off, n, h int) int {
 		off = 0
 	}
 	return off
-}
-
-func clampInto(cur, off, h, n int) int {
-	if cur < off {
-		cur = off
-	}
-	if cur > off+h-1 {
-		cur = off + h - 1
-	}
-	if cur >= n {
-		cur = n - 1
-	}
-	if cur < 0 {
-		cur = 0
-	}
-	return cur
 }
 
 // clamp 保证光标合法且可见。

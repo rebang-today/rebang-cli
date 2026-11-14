@@ -146,6 +146,48 @@ func window(ws []int, cur, avail int) (lo, hi int) {
 	}
 }
 
+// windowFrom 从 lo 开始向右放尽量多的项（lo 被夹到合法范围，并且不留下本可填满的空位）。
+func windowFrom(ws []int, lo, avail int) (int, int) {
+	n := len(ws)
+	if n == 0 {
+		return 0, -1
+	}
+	fits := func(lo, hi int) bool {
+		s := 0
+		for i := lo; i <= hi; i++ {
+			s += ws[i]
+		}
+		if lo > 0 {
+			s++
+		}
+		if hi < n-1 {
+			s++
+		}
+		return s <= avail
+	}
+	lo = max(min(lo, n-1), 0)
+	// 右端已能放到最后一项时，左移到正好放满为止，避免滚过头。
+	for lo > 0 && fits(lo-1, n-1) {
+		lo--
+	}
+	hi := lo
+	for hi+1 < n && fits(lo, hi+1) {
+		hi++
+	}
+	return lo, hi
+}
+
+// maxWindowLo 是手动滚动时窗口起点的上限：从它开始能放到最后一项。
+func maxWindowLo(ws []int, avail int) int {
+	n := len(ws)
+	for lo := 0; lo < n; lo++ {
+		if l, h := windowFrom(ws, lo, avail); l == lo && h == n-1 {
+			return lo
+		}
+	}
+	return max(n-1, 0)
+}
+
 // monitoring 报告该来源是内容监控，列表来自 /v1/monitoring 接口而不是榜单接口。
 func (s source) monitoring() bool {
 	return s.kind == srcTab && (s.tab.Key == monitoringTabKey || s.tab.Type == monitoringTabKey)
