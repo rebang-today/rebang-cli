@@ -797,3 +797,39 @@ func TestLoggedInShowsMembership(t *testing.T) {
 		t.Fatalf("登录后应显示会员状态\n%s", v)
 	}
 }
+
+func TestPointerShape(t *testing.T) {
+	var out strings.Builder
+	m := start(t, newFake(), Options{Pointer: &out})
+	move := func(x, y int) { m.Update(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionMotion}) }
+	move(5, 2) // 左栏来源
+	if out.String() != pointerHand {
+		t.Fatalf("悬停来源应切换为小手，got %q", out.String())
+	}
+	move(6, 2)
+	move(30, 3) // 列表条目
+	if out.String() != pointerHand {
+		t.Fatalf("在可点元素之间移动不应重复发送，got %q", out.String())
+	}
+	move(5, 15) // 左栏空白
+	if out.String() != pointerHand+pointerReset {
+		t.Fatalf("移到空白应恢复一次，got %q", out.String())
+	}
+	move(5, 16)
+	move(10, 19) // 底部栏
+	if out.String() != pointerHand+pointerReset {
+		t.Fatalf("在空白处移动不应重复发送，got %q", out.String())
+	}
+	out.Reset()
+	move(m.menuSpans()[1].x0, 0) // 顶部分类
+	move(1, 0)                   // 品牌标题
+	if out.String() != pointerHand+pointerReset {
+		t.Fatalf("分类可点、品牌标题不可点，got %q", out.String())
+	}
+	out.Reset()
+	move(30, 3)
+	move(m.leftWidth(), 3) // 分隔线
+	if out.String() != pointerHand+pointerReset {
+		t.Fatalf("分类可点、分隔线不可点，got %q", out.String())
+	}
+}

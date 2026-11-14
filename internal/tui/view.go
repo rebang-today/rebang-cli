@@ -76,6 +76,25 @@ func (m *model) rightHead() int {
 
 func (m *model) hasStrip() bool { return len(m.curSubs()) > 0 }
 
+// 最小可用尺寸：标题栏、状态栏加至少 3 行正文；单栏右侧也需要放下排名与几个字。
+const (
+	minWidth  = 20
+	minHeight = 5
+)
+
+const tooSmallText = "窗口太小，请放大"
+
+func (m *model) tooSmall() bool { return m.width < minWidth || m.height < minHeight }
+
+// tooSmallView 在窗口小于最小尺寸时显示一行居中的提示，其余行留空。
+func (m *model) tooSmallView() string {
+	text := runewidth.Truncate(tooSmallText, m.width, "")
+	line := spaces((m.width-runewidth.StringWidth(text))/2) + text
+	lines := make([]string, m.height)
+	lines[(m.height-1)/2] = line
+	return strings.Join(lines, "\n")
+}
+
 func (m *model) wide() bool { return m.width >= wideMinWidth }
 
 // leftWidth 按当前菜单最长的来源名自适应，14～18 列。
@@ -126,6 +145,9 @@ func (m *model) paneAt(x int) (focus, bool) {
 func (m *model) View() string {
 	if m.width <= 0 || m.height <= 0 {
 		return ""
+	}
+	if m.tooSmall() {
+		return m.tooSmallView()
 	}
 	var b strings.Builder
 	b.WriteString(m.headerLine())
@@ -284,9 +306,9 @@ func (m *model) headerLine() string {
 	if gap < 0 {
 		gap = 0
 	}
-	line += barText(styleBar, strings.Repeat(" ", gap)) + barText(infoStyle, info) + barText(styleBar, " ")
+	line += barText(styleBar, spaces(gap)) + barText(infoStyle, info) + barText(styleBar, " ")
 	if w := lipgloss.Width(line); w < m.width {
-		line += barText(styleBar, strings.Repeat(" ", m.width-w))
+		line += barText(styleBar, spaces(m.width-w))
 	}
 	return line
 }
@@ -306,7 +328,7 @@ func (m *model) bodyLines() []string {
 	left := m.sourceLines(lw, h)
 	right := m.rightLines(m.width-lw-1, h)
 	sep := styleSepColor.Render("│")
-	out := make([]string, h)
+	out := make([]string, max(h, 0))
 	for i := range out {
 		out[i] = left[i] + sep + right[i]
 	}
@@ -339,11 +361,11 @@ func (m *model) sourceLines(w, h int) []string {
 	}
 	srcs := m.curSources()
 	focused := m.focus == focusTree
-	out := make([]string, 0, h)
+	out := make([]string, 0, max(h, 0))
 	for i := m.srcOff; i < len(srcs) && len(out) < h; i++ {
 		s := srcs[i]
 		label := runewidth.Truncate(sourceLabel(s), w-3, "…")
-		gap := strings.Repeat(" ", w-2-runewidth.StringWidth(label))
+		gap := spaces(w - 2 - runewidth.StringWidth(label))
 		sel := i == m.srcCur
 		var text string
 		switch {
@@ -396,7 +418,7 @@ func (m *model) titleRow(w int) string {
 	if gap < 0 {
 		gap = 0
 	}
-	return " " + styleCrumb.Render(title) + strings.Repeat(" ", gap) + styleDim.Render(count) + " "
+	return " " + styleCrumb.Render(title) + spaces(gap) + styleDim.Render(count) + " "
 }
 
 func (m *model) stripSegs(x0, w int) ([]seg, bool, bool) {
@@ -436,7 +458,7 @@ func (m *model) stripRow(w int) string {
 	}
 	line := b.String()
 	if lw := lipgloss.Width(line); lw < w {
-		line += strings.Repeat(" ", w-lw)
+		line += spaces(w - lw)
 	}
 	return line
 }
@@ -486,7 +508,10 @@ func (m *model) emptyState(w int) []string {
 
 // centered 把几行文字放到区域中间。
 func centered(lines []string, w, h int) []string {
-	out := make([]string, 0, h)
+	if w <= 0 || h <= 0 {
+		return nil
+	}
+	out := make([]string, 0, max(h, 0))
 	top := (h - len(lines)) / 3
 	for i := 0; i < top; i++ {
 		out = append(out, "")
@@ -497,7 +522,7 @@ func centered(lines []string, w, h int) []string {
 			out = append(out, pad(l, w))
 			continue
 		}
-		out = append(out, strings.Repeat(" ", (w-lw)/2)+l)
+		out = append(out, spaces((w-lw)/2)+l)
 	}
 	return fill(out, w, h)
 }
@@ -506,7 +531,7 @@ func (m *model) listLines(w, h int) []string {
 	if len(m.items) == 0 {
 		return centered(m.emptyState(w), w, h)
 	}
-	out := make([]string, 0, h)
+	out := make([]string, 0, max(h, 0))
 	focused := m.focus == focusList
 	rankW := runewidth.StringWidth(itoa(int64(len(m.items))))
 	// 右侧热度列按最宽的一项右对齐，最多占三分之一宽度。
@@ -521,12 +546,12 @@ func (m *model) listLines(w, h int) []string {
 	}
 	for i := m.listOff; i < len(m.items) && len(out) < h; i++ {
 		it := m.items[i]
-		rank := strings.Repeat(" ", rankW-len(itoa(int64(i+1)))) + itoa(int64(i+1))
+		rank := spaces(rankW-len(itoa(int64(i+1)))) + itoa(int64(i+1))
 		metaW := metaCol
 		meta := ""
 		if metaW > 0 {
 			meta = runewidth.Truncate(it.meta, metaW, "…")
-			meta = strings.Repeat(" ", metaW-runewidth.StringWidth(meta)) + meta
+			meta = spaces(metaW-runewidth.StringWidth(meta)) + meta
 		}
 		// 行首标记 1 列 + 排名 + 两个空格 + 标题 + 空格 + 热度 + 行尾 1 列。
 		titleW := w - 1 - rankW - 2 - metaW - 2
@@ -559,7 +584,7 @@ func (m *model) listLines(w, h int) []string {
 				ts = styleHoverText
 			}
 			// 只给文字本身上样式，避免下划线延伸到行尾空白。
-			line = rs.Render(rank) + "  " + ts.Render(short) + strings.Repeat(" ", titleW-runewidth.StringWidth(short))
+			line = rs.Render(rank) + "  " + ts.Render(short) + spaces(titleW-runewidth.StringWidth(short))
 			used := rankW + 2 + titleW
 			if metaW > 0 {
 				ms := styleDim
@@ -570,7 +595,7 @@ func (m *model) listLines(w, h int) []string {
 				used += 1 + metaW
 			}
 			if used < w-1 {
-				line += strings.Repeat(" ", w-1-used)
+				line += spaces(w - 1 - used)
 			}
 		}
 		out = append(out, marker(sel, focused)+line)
@@ -706,9 +731,13 @@ func (m *model) statusLine() string {
 		mid = runewidth.Truncate(mid, avail, "…")
 	}
 	gap := avail - runewidth.StringWidth(mid)
-	line := barText(styleBar, " ") + barText(leftStyle, left) + barText(styleBar, "  ") + barText(midStyle, mid) + barText(styleBar, strings.Repeat(" ", gap)+"  ") + hintStr
+	sep := ""
+	if len(hs) > 0 {
+		sep = "  "
+	}
+	line := barText(styleBar, " ") + barText(leftStyle, left) + barText(styleBar, "  ") + barText(midStyle, mid) + barText(styleBar, spaces(gap)+sep) + hintStr
 	if w := lipgloss.Width(line); w < m.width {
-		line += barText(styleBar, strings.Repeat(" ", m.width-w))
+		line += barText(styleBar, spaces(m.width-w))
 	}
 	return line
 }
@@ -764,7 +793,7 @@ func (m *model) helpBody(w, h int) []string {
 	if top < 0 {
 		top = 0
 	}
-	out := make([]string, 0, h)
+	out := make([]string, 0, max(h, 0))
 	for i := 0; i < top; i++ {
 		out = append(out, "")
 	}
@@ -772,7 +801,7 @@ func (m *model) helpBody(w, h int) []string {
 		if lipgloss.Width(l)+left > w {
 			l = runewidth.Truncate(l, w-left, "…")
 		}
-		out = append(out, strings.Repeat(" ", left)+l)
+		out = append(out, spaces(left)+l)
 	}
 	return fill(out, w, h)
 }
@@ -798,21 +827,32 @@ func pad(s string, w int) string {
 		s = runewidth.Truncate(s, w, "…")
 		sw = runewidth.StringWidth(s)
 	}
-	return s + strings.Repeat(" ", w-sw)
+	return s + spaces(w-sw)
+}
+
+// spaces 返回 n 个空格，n ≤ 0 时返回空串（窗口很小时宽度可能算成负数）。
+func spaces(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return strings.Repeat(" ", n)
 }
 
 // fill 补齐到 h 行，每行 w 列。
 func fill(lines []string, w, h int) []string {
+	if h <= 0 {
+		return nil
+	}
 	if len(lines) > h {
 		lines = lines[:h]
 	}
-	blank := strings.Repeat(" ", w)
+	blank := spaces(w)
 	for len(lines) < h {
 		lines = append(lines, blank)
 	}
 	for i, l := range lines {
 		if lipgloss.Width(l) < w {
-			lines[i] = l + strings.Repeat(" ", w-lipgloss.Width(l))
+			lines[i] = l + spaces(w-lipgloss.Width(l))
 		}
 	}
 	return lines

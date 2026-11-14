@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/rebang-today/rebang-cli/internal/cli"
 	"github.com/rebang-today/rebang-cli/internal/errs"
@@ -99,5 +100,64 @@ func TestSpinnerOnlyWhileLoading(t *testing.T) {
 	m.loading = false
 	if _, cmd := m.Update(spinMsg{}); cmd != nil || m.spinning {
 		t.Fatal("加载结束后应停止动画")
+	}
+}
+
+func TestTinyWindowsDoNotPanic(t *testing.T) {
+	sizes := [][2]int{{0, 0}, {1, 1}, {4, 1}, {8, 2}, {12, 3}, {19, 4}, {20, 5}, {56, 10}, {110, 30}}
+	for _, logged := range []bool{false, true} {
+		m := start(t, newFake(), Options{LoggedIn: logged})
+		for _, sz := range sizes {
+			m.Update(tea.WindowSizeMsg{Width: sz[0], Height: sz[1]})
+			check := func(step string) {
+				t.Helper()
+				v := m.View()
+				lines := strings.Split(v, "\n")
+				if sz[1] > 0 && len(lines) > sz[1] {
+					t.Fatalf("%dx%d %s：%d 行超过高度", sz[0], sz[1], step, len(lines))
+				}
+				for _, l := range lines {
+					if w := lipgloss.Width(l); w > sz[0] {
+						t.Fatalf("%dx%d %s：行宽 %d 超过终端宽度\n%q", sz[0], sz[1], step, w, l)
+					}
+				}
+			}
+			check("初始")
+			for _, k := range []string{"down", "right", "2", "tab", "down", "esc", "0", "?", "?"} {
+				key(t, m, k)
+				check(k)
+			}
+			for x := 0; x < sz[0]+2; x += 3 {
+				for y := 0; y < sz[1]+1; y++ {
+					m.Update(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionMotion})
+				}
+			}
+			check("鼠标")
+		}
+	}
+}
+
+func TestTooSmallHintAndRecover(t *testing.T) {
+	m := start(t, newFake(), Options{})
+	key(t, m, "j")
+	m.Update(tea.WindowSizeMsg{Width: 19, Height: 10})
+	if v := m.View(); !strings.Contains(v, "窗口太小") || strings.Contains(v, "知乎") {
+		t.Fatalf("低于最小宽度应只显示提示\n%s", v)
+	}
+	m.Update(tea.WindowSizeMsg{Width: 40, Height: 4})
+	if v := m.View(); !strings.Contains(v, "窗口太小") {
+		t.Fatalf("低于最小高度应只显示提示\n%s", v)
+	}
+	m.Update(tea.WindowSizeMsg{Width: 6, Height: 2})
+	if v := m.View(); strings.Contains(v, "\n\n\n") || !strings.Contains(v, "窗口") {
+		t.Fatalf("很窄时提示应截断\n%q", v)
+	}
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
+	if v := m.View(); !strings.Contains(v, "微博") || m.srcCur != 1 {
+		t.Fatalf("放大后应恢复原界面与状态\n%s", v)
+	}
+	m.Update(tea.WindowSizeMsg{Width: 4, Height: 1})
+	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")}); cmd == nil {
+		t.Fatal("窗口太小时 q 仍应退出")
 	}
 }

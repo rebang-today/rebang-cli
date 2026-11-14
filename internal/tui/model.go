@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"errors"
+	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,6 +39,10 @@ type Options struct {
 	Open       func(string) error
 	Copy       func(string) error
 	Now        func() time.Time
+	// Pointer 用于写出鼠标指针形状的控制序列（OSC 22），为 nil 时不改变指针。
+	Pointer io.Writer
+	// StatePath 是位置记忆文件的路径，为空时不读写。
+	StatePath string
 }
 
 type focus int
@@ -66,15 +72,20 @@ type model struct {
 	srcCur      int
 	srcOff      int
 	subIdx      int
-	// 每个菜单上次的来源（visited 为 true 才有效）与每个来源上次的子榜单，只保存在内存中。
-	srcMem  map[int64]int
-	visited map[int64]bool
-	subMem  map[string]int
+	// 每个菜单上次的来源 key 与每个来源上次手动选的子榜单 key，退出后保存到状态文件。
+	srcMem map[int64]string
+	subMem map[string]string
+	// mem 是启动时读到的记忆，saveSeq 用于合并延迟写入，posSig 是上次安排写入时的位置。
+	mem     posState
+	saveSeq int
+	posSig  string
 	// 左栏移动后延迟加载右栏，debSeq 用于丢弃过期的延迟。
 	debSeq     int
 	debPending bool
 	// autoSub 表示当前子榜单是自动选的（没有记忆），而不是用户手动选的。
 	autoSub bool
+	// menusSeen 表示已经按记忆选过启动时的菜单。
+	menusSeen bool
 
 	target     listTarget
 	searchQ    string
@@ -103,6 +114,8 @@ type model struct {
 	lastClickIdx int
 	lastClickPan focus
 
+	// pointerOn 表示已把鼠标指针切换为小手。
+	pointerOn bool
 	// 鼠标悬停的行，hoverOK 为 false 表示没有悬停。
 	hoverOK   bool
 	hoverPane focus
@@ -167,14 +180,26 @@ func newModel(opt Options) *model {
 	in.Prompt = "搜索：" // 中文提示
 	in.Placeholder = "输入关键词，回车搜索，Esc 取消"
 	in.CharLimit = 100
+	mem := loadPosState(opt.StatePath)
+	srcMem, subMem := map[int64]string{}, map[string]string{}
+	for k, v := range mem.Sources {
+		if id, err := strconv.ParseInt(k, 10, 64); err == nil && v != "" {
+			srcMem[id] = v
+		}
+	}
+	for k, v := range mem.Subs {
+		if v != "" {
+			subMem[k] = v
+		}
+	}
 	return &model{
 		opt:         opt,
 		data:        map[int64]*menuData{},
 		menuLoading: map[int64]bool{},
 		menuErrs:    map[int64]string{},
-		srcMem:      map[int64]int{},
-		visited:     map[int64]bool{},
-		subMem:      map[string]int{},
+		srcMem:      srcMem,
+		subMem:      subMem,
+		mem:         mem,
 		loggedIn:    opt.LoggedIn,
 		menuIdx:     1, // 启动时停在第一个服务端菜单（综合）
 		input:       in,
@@ -312,7 +337,20 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.spinTick()
 	}
+	if sm, ok := msg.(saveMsg); ok {
+		if sm.seq == m.saveSeq {
+			m.SaveState()
+		}
+		return m, nil
+	}
 	next, cmd := m.update(msg)
+	if sig := m.posSignature(); sig != m.posSig {
+		// 启动后第一次得到位置只是恢复记忆，不必写入。
+		if m.posSig != "" {
+			cmd = tea.Batch(cmd, m.markDirty())
+		}
+		m.posSig = sig
+	}
 	if m.busy() && !m.spinning {
 		m.spinning = true
 		cmd = tea.Batch(cmd, m.spinTick())
@@ -357,7 +395,21 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i := range m.menus {
 			m.menus[i].Name = ui.CleanText(m.menus[i].Name)
 		}
-		m.menuIdx = clampIdx(m.menuIdx, len(msg.menus))
+		if !m.menusSeen {
+			// 第一次拿到菜单：回到上次的菜单；它已不存在时停在第一个服务端菜单。
+			m.menusSeen = true
+			if m.mem.Menu != nil {
+				for i, mn := range m.menus {
+					if mn.ID == *m.mem.Menu {
+						m.menuIdx = i
+					}
+				}
+			}
+		}
+		m.menuIdx = clampIdx(m.menuIdx, len(m.menus))
+		if len(m.menus) == 1 {
+			m.menuIdx = 0
+		}
 		return m, m.enterMenu(m.menuIdx)
 	case menuDataMsg:
 		delete(m.menuLoading, msg.id)
@@ -601,26 +653,49 @@ func (m *model) savePos() {
 	if !ok || m.data[mn.ID] == nil {
 		return
 	}
-	m.srcMem[mn.ID], m.visited[mn.ID] = m.srcCur, true
+	s := m.curSource()
+	if s.kind == srcNone {
+		return
+	}
+	m.srcMem[mn.ID] = s.key()
 	// 自动选的子榜单不记忆，下次进入时重新按默认规则选择。
-	if !m.autoSub {
-		m.subMem[m.memKey(m.curSource())] = m.subIdx
+	if !m.autoSub && s.kind == srcTab && len(s.tab.Children) > 0 {
+		m.subMem[m.memKey(s)] = s.tab.Children[clampIdx(m.subIdx, len(s.tab.Children))].Key
 	}
 }
 
-// restorePos 恢复菜单上次的位置；第一次进入时选第一个榜单。
+// restorePos 恢复菜单上次的来源；没有记忆或该来源已不存在时选第一个榜单。
 func (m *model) restorePos() {
 	mn, _ := m.curMenu()
 	srcs := m.curSources()
-	if m.visited[mn.ID] {
-		m.srcCur = m.srcMem[mn.ID]
-	} else {
-		m.srcCur = 0
+	m.srcCur = 0
+	if k, ok := m.srcMem[mn.ID]; ok {
+		for i, s := range srcs {
+			if s.key() == k {
+				m.srcCur = i
+				break
+			}
+		}
 	}
 	m.srcCur = clampIdx(m.srcCur, len(srcs))
 	m.subIdx, m.autoSub = m.recallSub(m.curSource())
-	m.visited[mn.ID] = true
 	m.clamp()
+}
+
+// posSignature 概括需要持久化的位置，变化时才安排写入。
+func (m *model) posSignature() string {
+	if len(m.menus) == 0 {
+		return ""
+	}
+	mn, _ := m.curMenu()
+	sig := itoa(mn.ID) + "|" + itoa(int64(len(m.srcMem))) + "|" + itoa(int64(len(m.subMem)))
+	if k, ok := m.srcMem[mn.ID]; ok {
+		sig += "|" + k
+		if sub, ok := m.subMem[itoa(mn.ID)+"/"+k]; ok {
+			sig += "|" + sub
+		}
+	}
+	return sig
 }
 
 // 公众号来源的子榜单规则，与网站一致：默认“关注”，未登录或关注为空时改用“热门”。
@@ -641,8 +716,11 @@ func subIndex(s source, key string) int {
 
 // recallSub 返回来源上次的子榜单；没有记忆时按默认规则选择，auto 为 true。
 func (m *model) recallSub(s source) (idx int, auto bool) {
-	if i, ok := m.subMem[m.memKey(s)]; ok {
-		return i, false
+	if k, ok := m.subMem[m.memKey(s)]; ok {
+		// 记住的子榜单已不存在时当作没有记忆。
+		if i := subIndex(s, k); i >= 0 {
+			return i, false
+		}
 	}
 	if s.kind == srcTab && s.tab.Key == wechatTab {
 		hot := subIndex(s, wechatHot)
@@ -1016,10 +1094,12 @@ func (m *model) hitTest(x, y int) hit {
 }
 
 func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
-	if m.help || m.searching {
+	if m.tooSmall() || m.help || m.searching {
+		m.setPointer(false)
 		return nil
 	}
 	h := m.hitTest(ev.X, ev.Y)
+	m.setPointer(h.what != hitNone)
 	if ev.Action == tea.MouseActionMotion && ev.Button == tea.MouseButtonNone {
 		m.hoverOK = false
 		if h.what == hitSource || h.what == hitItem {
