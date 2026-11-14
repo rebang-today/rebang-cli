@@ -37,20 +37,20 @@ func TestViewGolden(t *testing.T) {
 	section("双栏·列表焦点 90x10", snapshot(m, 90, 10))
 	key(t, m, "esc", "j", "enter", "l")
 	section("子榜单条 90x10", snapshot(m, 90, 10))
-	section("窄屏·列表 50x6", snapshot(m, 50, 6))
-	key(t, m, "esc")
-	section("窄屏·左栏 50x6", snapshot(m, 50, 6))
+	section("单栏·榜单 48x10", snapshot(m, 48, 10))
 	key(t, m, "tab")
-	section("极窄 30x5", snapshot(m, 30, 5))
+	section("单栏·来源列表 48x10", snapshot(m, 48, 10))
+	key(t, m, "esc")
+	section("窗口太小 39x10", snapshot(m, 39, 10))
 	key(t, m, "2")
-	section("切换分类 90x8", snapshot(m, 90, 8))
+	section("切换分类 90x10", snapshot(m, 90, 10))
 	key(t, m, "0")
-	section("订阅·未登录 90x8", snapshot(m, 90, 8))
+	section("订阅·未登录 90x10", snapshot(m, 90, 10))
 
 	fe := newFake()
 	fe.lists["|zhihu|"] = nil
 	m = start(t, fe, Options{Now: fixedNow})
-	section("空列表 80x8", snapshot(m, 80, 8))
+	section("空列表 80x10", snapshot(m, 80, 10))
 
 	m = start(t, f, Options{Now: fixedNow})
 	key(t, m, "?")
@@ -60,12 +60,12 @@ func TestViewGolden(t *testing.T) {
 	f2.search = []cli.SearchResultItem{}
 	m = start(t, f2, Options{Now: fixedNow})
 	key(t, m, "/", "x", "enter")
-	section("搜索无结果 80x8", snapshot(m, 80, 8))
+	section("搜索无结果 80x10", snapshot(m, 80, 10))
 
 	f3 := newFake()
 	f3.listErr = errs.Network(errors.New("dial tcp: refused"))
 	m = start(t, f3, Options{Now: fixedNow})
-	section("加载失败 80x8", snapshot(m, 80, 8))
+	section("加载失败 80x10", snapshot(m, 80, 10))
 
 	golden.Assert(t, "views", b.String())
 }
@@ -104,7 +104,7 @@ func TestSpinnerOnlyWhileLoading(t *testing.T) {
 }
 
 func TestTinyWindowsDoNotPanic(t *testing.T) {
-	sizes := [][2]int{{0, 0}, {1, 1}, {4, 1}, {8, 2}, {12, 3}, {19, 4}, {20, 5}, {56, 10}, {110, 30}}
+	sizes := [][2]int{{0, 0}, {1, 1}, {4, 1}, {8, 2}, {12, 3}, {19, 4}, {20, 5}, {39, 10}, {40, 9}, {40, 10}, {48, 12}, {55, 10}, {56, 10}, {110, 30}}
 	for _, logged := range []bool{false, true} {
 		m := start(t, newFake(), Options{LoggedIn: logged})
 		for _, sz := range sizes {
@@ -140,13 +140,17 @@ func TestTinyWindowsDoNotPanic(t *testing.T) {
 func TestTooSmallHintAndRecover(t *testing.T) {
 	m := start(t, newFake(), Options{})
 	key(t, m, "j")
-	m.Update(tea.WindowSizeMsg{Width: 19, Height: 10})
-	if v := m.View(); !strings.Contains(v, "窗口太小") || strings.Contains(v, "知乎") {
-		t.Fatalf("低于最小宽度应只显示提示\n%s", v)
+	m.Update(tea.WindowSizeMsg{Width: 39, Height: 10})
+	if v := m.View(); !strings.Contains(v, "窗口太小，至少需要 40×10") || strings.Contains(v, "知乎") {
+		t.Fatalf("39x10 低于最小宽度应只显示提示\n%s", v)
 	}
-	m.Update(tea.WindowSizeMsg{Width: 40, Height: 4})
+	m.Update(tea.WindowSizeMsg{Width: 40, Height: 9})
 	if v := m.View(); !strings.Contains(v, "窗口太小") {
-		t.Fatalf("低于最小高度应只显示提示\n%s", v)
+		t.Fatalf("40x9 低于最小高度应只显示提示\n%s", v)
+	}
+	m.Update(tea.WindowSizeMsg{Width: 40, Height: 10})
+	if v := m.View(); strings.Contains(v, "窗口太小") || !strings.Contains(v, "微博") {
+		t.Fatalf("40x10 应正常显示\n%s", v)
 	}
 	m.Update(tea.WindowSizeMsg{Width: 6, Height: 2})
 	if v := m.View(); strings.Contains(v, "\n\n\n") || !strings.Contains(v, "窗口") {
@@ -163,7 +167,7 @@ func TestTooSmallHintAndRecover(t *testing.T) {
 }
 
 func TestThemeColorsMatchWebsite(t *testing.T) {
-	if colorAccent.Light != "#2C5CF5" || colorAccent.Dark != "#4D7EF6" {
+	if colorAccent.Light != "#2C5CF5" || colorAccent.Dark != "#7AA2F7" {
 		t.Fatalf("强调色应为网站蓝：%+v", colorAccent)
 	}
 	if styleRankTop.GetForeground() != lipgloss.TerminalColor(colorRankTop) || colorRankTop.Dark != "#F7670D" {

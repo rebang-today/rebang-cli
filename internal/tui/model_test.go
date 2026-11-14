@@ -461,15 +461,69 @@ func TestMouse(t *testing.T) {
 
 func TestNarrowLayout(t *testing.T) {
 	f := newFake()
-	m := start(t, f, Options{})
-	m.Update(tea.WindowSizeMsg{Width: 50, Height: 12})
+	f.lists["|zhihu|"][0].Heat = "1234万热度"
+	f.account = &cli.AccountView{ID: 1, Email: "a-very-long-address@example.com", IsMember: true, MemberExpiresAt: "2027-01-01T00:00:00+08:00"}
+	f.lists["|zhihu|"][1].Title = "知乎第二：一个很长很长的标题，单栏放不下热度时应该优先显示完整标题"
+	m := newModel(Options{Source: f, Version: "0.1.0", LoggedIn: true})
+	m.Update(tea.WindowSizeMsg{Width: 48, Height: 12})
+	drain(t, m, m.Init())
 	v := m.View()
-	if strings.Contains(v, "│") || !strings.Contains(v, "微博") || strings.Contains(v, "知乎第一") {
-		t.Fatalf("窄窗口启动时应只显示左栏\n%s", v)
+	if strings.Contains(v, "│") || !strings.Contains(v, "知乎第一") || strings.Contains(v, "微博") || m.focus != focusList {
+		t.Fatalf("48 列单栏启动时应显示榜单\n%s", v)
 	}
+	if !strings.Contains(v, "tab 来源") || !strings.Contains(m.statusLine(), "tab 来源") {
+		t.Fatalf("单栏底部提示应包含 tab 来源\n%s", v)
+	}
+	if strings.Contains(v, "1234万") {
+		t.Fatalf("单栏放不下热度时应隐藏热度列\n%s", v)
+	}
+	key(t, m, "j")
+	if m.listCur != 1 {
+		t.Fatal("↑↓ 应在榜单里移动")
+	}
+
+	// Tab 打开来源列表，Esc 只返回、不切换。
 	key(t, m, "tab")
-	if v := m.View(); !strings.Contains(v, "知乎第一") || strings.Contains(v, "微博") {
-		t.Fatalf("tab 应切换到列表\n%s", v)
+	if v := m.View(); !strings.Contains(v, "微博") || strings.Contains(v, "知乎第一") || !m.picking() {
+		t.Fatalf("tab 应打开来源列表\n%s", v)
+	}
+	calls := len(f.listCalls)
+	key(t, m, "j", "esc")
+	if m.picking() || m.srcCur != 0 || m.target.tab != "zhihu" || len(f.listCalls) != calls {
+		t.Fatalf("Esc 不应切换来源，src=%d target=%+v", m.srcCur, m.target)
+	}
+	if v := m.View(); !strings.Contains(v, "知乎第一") {
+		t.Fatalf("Esc 应回到榜单\n%s", v)
+	}
+
+	// 回车切换到选中的来源并加载，回到榜单。
+	key(t, m, "tab", "j", "enter")
+	if m.picking() || m.target.tab != "weibo" || m.items[0].title != "微博热搜" {
+		t.Fatalf("回车应切换来源，target=%+v", m.target)
+	}
+	v = m.View()
+	if !strings.Contains(v, "微博") || !strings.Contains(v, "热搜") || !strings.Contains(v, "要闻") || !strings.Contains(v, "微博热搜") {
+		t.Fatalf("标题行应显示来源名，子榜单条照常显示\n%s", v)
+	}
+	key(t, m, "l")
+	if m.target.subTab != "news" {
+		t.Fatalf("←→ 应切换子榜单，target=%+v", m.target)
+	}
+	key(t, m, "2")
+	if m.menuIdx != 2 || m.picking() || m.target.node != "n1" {
+		t.Fatalf("数字键应切换分类，menu=%d target=%+v", m.menuIdx, m.target)
+	}
+
+	// 来源列表里切换分类：关闭来源列表后切换。
+	key(t, m, "tab", "1")
+	if m.picking() || m.menuIdx != 1 {
+		t.Fatalf("来源列表中按数字键应切换分类，menu=%d", m.menuIdx)
+	}
+
+	// 56 列及以上仍为双栏。
+	m.Update(tea.WindowSizeMsg{Width: 56, Height: 12})
+	if v := m.View(); !strings.Contains(v, "│") || !strings.Contains(v, "知乎") {
+		t.Fatalf("56 列应为双栏\n%s", v)
 	}
 }
 
@@ -682,7 +736,7 @@ func TestInvisibleCharsStripped(t *testing.T) {
 	}
 	m := start(t, f, Options{})
 	for _, w := range []int{100, 60, 40} {
-		m.Update(tea.WindowSizeMsg{Width: w, Height: 8})
+		m.Update(tea.WindowSizeMsg{Width: w, Height: 10})
 		v := m.View()
 		for i, line := range strings.Split(v, "\n") {
 			if lw := lipgloss.Width(line); lw > w {

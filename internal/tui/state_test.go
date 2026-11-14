@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/rebang-today/rebang-cli/internal/api"
 	"github.com/rebang-today/rebang-cli/internal/cli"
 )
@@ -180,4 +182,21 @@ func containsAll(s string, subs ...string) bool {
 		}
 	}
 	return true
+}
+
+func TestStateIgnoresUnconfirmedPick(t *testing.T) {
+	path := filepath.Join(t.TempDir(), stateFileName)
+	m := start(t, stateFake(), Options{StatePath: path})
+	m.Update(tea.WindowSizeMsg{Width: 48, Height: 12})
+	key(t, m, "tab", "j")
+	if !m.picking() || m.srcCur != 1 {
+		t.Fatal("应打开来源列表并移动光标")
+	}
+	quit(m)
+	if s := loadPosState(path); s.Sources["1"] == "t:weibo" {
+		t.Fatalf("未确认的来源不应保存，got %+v", s)
+	}
+	if !m.picking() || m.srcCur != 1 {
+		t.Fatal("保存不应改变界面状态")
+	}
 }

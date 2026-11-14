@@ -7,15 +7,16 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// 颜色随终端深浅色自动切换（D-24）。主题色与网站一致：强调色为网站的蓝色（--primary），
-// 只有前 3 名序号用网站的橙色（--rank-top）。
+// 颜色随终端深浅色自动切换（D-24）。浅色模式用网站的蓝色（--primary）；深色模式下网站蓝
+// 饱和度过高、发闷，改用更亮更柔和的 #7AA2F7 及同色调深蓝背景（方案 B）。
+// 前 3 名序号用网站的橙色（--rank-top）。
 var (
-	colorAccent = lipgloss.AdaptiveColor{Light: "#2C5CF5", Dark: "#4D7EF6"}
+	colorAccent = lipgloss.AdaptiveColor{Light: "#2C5CF5", Dark: "#7AA2F7"}
 	colorDim    = lipgloss.AdaptiveColor{Light: "#6B7280", Dark: "#9CA3AF"}
 	colorError  = lipgloss.AdaptiveColor{Light: "#B91C1C", Dark: "#F87171"}
 	colorOK     = lipgloss.AdaptiveColor{Light: "#15803D", Dark: "#4ADE80"}
 	colorBar    = lipgloss.AdaptiveColor{Light: "#F3F4F6", Dark: "#1F2937"}
-	colorSelBg  = lipgloss.AdaptiveColor{Light: "#E0E8FE", Dark: "#1E2A5A"}
+	colorSelBg  = lipgloss.AdaptiveColor{Light: "#E0E8FE", Dark: "#283457"}
 	// 浅色背景上 #F7670D 对比度只有 3:1，改用略深的橙色。
 	colorRankTop = lipgloss.AdaptiveColor{Light: "#D9480F", Dark: "#F7670D"}
 
@@ -31,10 +32,10 @@ var (
 	styleRankTop  = lipgloss.NewStyle().Foreground(colorRankTop).Bold(true)
 	styleSepColor = lipgloss.NewStyle().Foreground(colorSep)
 
-	colorBrandBg   = lipgloss.AdaptiveColor{Light: "#2C5CF5", Dark: "#2C5CF5"} // 白字对比度 5.3:1
+	colorBrandBg   = lipgloss.AdaptiveColor{Light: "#2C5CF5", Dark: "#3D63D8"} // 白字对比度均约 5.3:1
 	colorHoverBg   = lipgloss.AdaptiveColor{Light: "#F3F4F6", Dark: "#262626"}
 	colorSep       = lipgloss.AdaptiveColor{Light: "#D1D5DB", Dark: "#374151"}
-	colorNoticeBg  = lipgloss.AdaptiveColor{Light: "#EEF2FF", Dark: "#172554"}
+	colorNoticeBg  = lipgloss.AdaptiveColor{Light: "#EEF2FF", Dark: "#1F2A44"}
 	styleBrand     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).Background(colorBrandBg)
 	styleCrumb     = lipgloss.NewStyle().Bold(true)
 	styleMarker    = lipgloss.NewStyle().Foreground(colorAccent)
@@ -47,7 +48,7 @@ var (
 	styleMenu   = lipgloss.NewStyle()
 	styleMenuOn = lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Background(colorTabBg)
 	styleTabOn  = lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Background(colorTabBg)
-	colorTabBg  = lipgloss.AdaptiveColor{Light: "#EEF2FF", Dark: "#172554"}
+	colorTabBg  = lipgloss.AdaptiveColor{Light: "#EEF2FF", Dark: "#1F2A44"}
 
 	spinFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 )
@@ -79,13 +80,13 @@ func (m *model) rightHead() int {
 
 func (m *model) hasStrip() bool { return len(m.curSubs()) > 0 }
 
-// 最小可用尺寸：标题栏、状态栏加至少 3 行正文；单栏右侧也需要放下排名与几个字。
+// 最小可用尺寸：40 列能放下单栏的标题、子榜单条与底部提示，10 行能看到几条榜单。
 const (
-	minWidth  = 20
-	minHeight = 5
+	minWidth  = 40
+	minHeight = 10
 )
 
-const tooSmallText = "窗口太小，请放大"
+const tooSmallText = "窗口太小，至少需要 40×10"
 
 func (m *model) tooSmall() bool { return m.width < minWidth || m.height < minHeight }
 
@@ -547,6 +548,16 @@ func (m *model) listLines(w, h int) []string {
 	if metaCol > w/3 {
 		metaCol = w / 3
 	}
+	// 单栏时优先显示标题：本页有标题因热度列被截断时，整列隐藏热度。
+	if !m.wide() && metaCol > 0 {
+		withMeta := w - 1 - rankW - 2 - metaCol - 2
+		for i := m.listOff; i < len(m.items) && i < m.listOff+h; i++ {
+			if runewidth.StringWidth(m.items[i].title) > withMeta {
+				metaCol = 0
+				break
+			}
+		}
+	}
 	for i := m.listOff; i < len(m.items) && len(out) < h; i++ {
 		it := m.items[i]
 		rank := spaces(rankW-len(itoa(int64(i+1)))) + itoa(int64(i+1))
@@ -626,6 +637,17 @@ func (m *model) hints() []hint {
 	switch {
 	case m.searchQ != "":
 		hs = []hint{{"↵", "打开"}, {"esc", "返回榜单"}, {"y", "复制"}, {"/", "搜索"}}
+		if !m.wide() {
+			hs = append(hs[:2], append([]hint{{"tab", "来源"}}, hs[2:]...)...)
+		}
+	case m.picking():
+		hs = []hint{{"↑↓", "选择"}, {"↵", "切换"}, {"esc", "返回榜单"}, {m.menuKeys(), "分类"}}
+	case !m.wide():
+		hs = []hint{{"tab", "来源"}, {"↵", "打开"}}
+		if sub {
+			hs = append(hs, hint{"←→", "切换"})
+		}
+		hs = append(hs, hint{m.menuKeys(), "分类"}, hint{"y", "复制"}, hint{"/", "搜索"})
 	case m.focus == focusTree:
 		hs = []hint{{"↑↓", "榜单"}}
 		if sub {
@@ -713,6 +735,14 @@ func (m *model) statusLine() string {
 		left = runewidth.Truncate(left, m.width-2, "…")
 		lw = runewidth.StringWidth(left)
 	}
+	if !m.wide() && len(hs) > 0 {
+		// 单栏时必须留出第一个提示（tab 来源），账号信息让位。
+		_, w1 := render(hs[:1])
+		if room := m.width - w1 - 6; lw > room && room > 0 {
+			left = runewidth.Truncate(left, room, "…")
+			lw = runewidth.StringWidth(left)
+		}
+	}
 	hintStr, hw := render(hs)
 	// 有消息时至少给它留 24 列（或消息本身的宽度），其余空间给按键提示。
 	minMid := runewidth.StringWidth(mid)
@@ -749,8 +779,8 @@ var helpKeys = []struct {
 	group string
 	keys  []hint
 }{
-	{"浏览", []hint{{"↑ ↓  j k", "在当前栏上下移动，左栏停下后自动加载"}, {"← →  h l", "切换子榜单"}, {"0-9  [ ]", "切换分类，0 为订阅"}, {"tab", "切换左右栏"}, {"g G 空格", "开头、结尾、翻页"}}},
-	{"操作", []hint{{"回车", "左栏进入列表；列表中在浏览器打开"}, {"esc", "列表返回左栏；搜索时返回榜单"}, {"/", "搜索"}, {"y", "复制链接"}, {"r", "刷新"}, {"?  q", "帮助、退出"}}},
+	{"浏览", []hint{{"↑ ↓  j k", "在当前栏上下移动，左栏停下后自动加载"}, {"← →  h l", "切换子榜单"}, {"0-9  [ ]", "切换分类，0 为订阅"}, {"tab", "切换左右栏；单栏时打开来源列表"}, {"g G 空格", "开头、结尾、翻页"}}},
+	{"操作", []hint{{"回车", "左栏进入列表；列表中在浏览器打开；来源列表中切换来源"}, {"esc", "列表返回左栏；来源列表返回榜单；搜索时返回榜单"}, {"/", "搜索"}, {"y", "复制链接"}, {"r", "刷新"}, {"?  q", "帮助、退出"}}},
 }
 
 func (m *model) helpBody(w, h int) []string {
