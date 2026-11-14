@@ -2,7 +2,7 @@ package cli
 
 import (
 	"context"
-
+	"encoding/json"
 	"os"
 	"time"
 
@@ -31,7 +31,11 @@ func newLoginCmd(a *App) *cobra.Command {
 
 CLI 展示授权码并打开浏览器，在网站登录并确认后即可完成登录。
 网站支持的全部登录方式都可使用。在 SSH 等没有桌面的环境中使用 --no-browser，
-在任意设备的浏览器中打开显示的链接即可。`,
+在任意设备的浏览器中打开显示的链接即可。
+
+JSON 输出时（非终端或 -o json），拿到授权码后立即在标准错误输出一行 JSON，便于 Agent
+转告用户：{"event":"login_pending","verification_uri":…,"verification_uri_complete":…,
+"user_code":…,"expires_in":…}。命令在用户确认、拒绝或授权码过期后自行退出。`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if _, src := credentials.Token(); src == credentials.SourceEnv {
@@ -55,6 +59,9 @@ CLI 展示授权码并打开浏览器，在网站登录并确认后即可完成�
 						opened = a.OpenURL(u) == nil
 					}
 					a.Info("%s", loginPrompt(a.ErrTheme(), a.StderrTTY, dc.UserCode, u, opened, !noBrowser))
+					if a.Format() == output.JSON {
+						a.loginPendingLine(dc, u)
+					}
 					wait.start(dc)
 				},
 				OnSlowDown: wait.slowDown,
@@ -268,3 +275,24 @@ func ToAccountView(acct *api.Account, now time.Time, web string) AccountView {
 
 // MemberText 返回会员状态的中文描述。
 func (v AccountView) MemberText() string { return v.memberText() }
+
+// LoginPending 是 JSON 模式下 auth login 拿到授权码后写到标准错误的一行（D-64）。
+type LoginPending struct {
+	Event                   string `json:"event"`
+	VerificationURI         string `json:"verification_uri"`
+	VerificationURIComplete string `json:"verification_uri_complete"`
+	UserCode                string `json:"user_code"`
+	ExpiresIn               int    `json:"expires_in"`
+}
+
+func (a *App) loginPendingLine(dc *api.DeviceCode, u string) {
+	uri := dc.VerificationURI
+	if uri == "" {
+		uri = u
+	}
+	b, err := json.Marshal(LoginPending{Event: "login_pending", VerificationURI: uri, VerificationURIComplete: u, UserCode: dc.UserCode, ExpiresIn: dc.ExpiresIn})
+	if err != nil {
+		return
+	}
+	a.Info("%s\n", b)
+}

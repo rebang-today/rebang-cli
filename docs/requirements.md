@@ -108,7 +108,8 @@
 
 - **D-50 升级策略**：
   - `rebang update` 手动升级。
-  - 交互使用时每天最多检查一次新版本并提示；非交互调用时不检查、不输出提示。
+  - 交互使用时每天最多检查一次新版本并提示。
+  - JSON 输出（非终端或 `-o json`）共用同一个每天一次的检查缓存（`state.json`），缓存过期时联网检查一次，最多等 1.5 秒，失败静默；结果只通过 JSON 的 `_notice` 字段告知（见 D-63），不向标准错误输出提示。md、table 的非交互调用不检查。
   - 默认不静默替换程序，可通过 `auto_update` 开启。
   - 版本低于 `min_version` 时拒绝执行并提示升级（退出码 7）。
 - **D-51 版本信息文件**：自有 CDN 上的静态文件 `cli/manifest.json`，包含最新版本、`min_version`、各平台下载地址与 sha256。升级只读取这个文件；需要强制升级时手动修改 `min_version`。
@@ -119,6 +120,7 @@
   - Windows：`irm <官网>/cli/install.ps1 | iex`
   - macOS 另可 `brew install rebang-today/tap/rebang`
   - 不提供 npm 与 scoop。
+  - 安装脚本按需询问是否同时安装 Agent Skill，最后只提示登录是可选的（见 D-65）。
 - **D-55 发版流水线**：推送 `v*` tag 触发 GitHub Actions，由 goreleaser 依次完成：构建、生成 sha256 与 minisign 签名、发布 GitHub Releases、更新 Homebrew tap、上传 CDN，**最后**写入 `manifest.json`。需要的 Secrets：仅限 `cli/` 目录写权限的 OSS 子账号密钥、minisign 私钥、tap 仓库写权限 token。
 - **D-56 版本号**：语义化版本，从 v0.1.0 开始。1.0 之前允许不兼容变更；1.0 之后命令名、参数、JSON 字段、退出码均视为稳定接口，不兼容变更必须升主版本。每个版本附带更新日志。
 
@@ -132,6 +134,9 @@
   3. 按链接去重，检查结果是否真的在讲用户问的主体，再按热度排序。
   4. 综合作答，每条结论附原链接；证据不足时如实说明。
   5. 遇到退出码 4（需要会员，例如普通用户只能搜当天），如实告知用户，不得编造结果。
+- **D-63 JSON 版本提醒**：JSON 输出时，若每天一次的检查发现新版本，或本机已安装的 skill（`~/.claude`、`~/.codex`、`~/.agents` 下由 rebang 安装的）与程序版本不一致，在结果的顶层对象末尾附加 `_notice`：`{"update":{"current","latest","command":"rebang update"},"skill":{"installed","expected","dirs","command":"rebang skill install"}}`，没有的部分省略，都没有时不出现该字段。结果不是对象时不附加；`rebang update` 自身不附加；开发版不检查；`REBANG_NO_NOTICE=1` 关闭。skill 要求 Agent 先完成任务，最后提醒用户运行对应命令，不得自行升级或重装。
+- **D-64 按需登录**：热榜、搜索、AI 总结不需要登录，安装与 Agent 指引中都不把登录作为必要步骤。skill 规定：只有命令以退出码 3 结束时，Agent 才告诉用户该功能需要登录并询问是否现在登录；用户同意后在后台运行 `rebang auth login --no-browser`，把链接与授权码原样转告用户，等命令自行退出后运行 `rebang auth status` 确认，再重试原命令；用户拒绝时继续用无需登录的功能完成任务。为此 `auth login` 在 JSON 输出时拿到授权码后立即（第一次轮询之前）在标准错误输出可读提示与一行 JSON：`{"event":"login_pending","verification_uri","verification_uri_complete","user_code","expires_in"}`；终端 table 模式不输出这一行。
+- **D-65 安装时安装 skill**：`install.sh` / `install.ps1` 安装完成后，检测到 `~/.claude`、`~/.codex`、`~/.agents` 任一存在时询问“检测到 Claude Code、Codex，是否安装 rebang Agent Skill？[Y/n]”（列出检测到的 Agent），默认是，确认后运行新装程序的 `rebang skill install`，失败不影响程序安装。`curl | sh` 时从 `/dev/tty` 读取回答；没有终端（CI 等，Windows 为输入被重定向）时不安装。`REBANG_INSTALL_SKILL=1|0` 或参数 `--with-skill` / `--no-skill` 明确选择，不再询问；未检测到 Agent 时不询问，只提示可运行 `rebang skill install`。结尾的登录提示为可选：“可选：rebang auth login 登录后可用我的关注、内容监控等功能”，不追问、不打开浏览器。README 提供交给 Agent 的安装指引：安装脚本 → `rebang skill install` → 用一条无需登录的命令（如 `rebang list`）验证，不包含登录步骤。
 
 ### 隐私与分发合规
 

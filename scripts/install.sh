@@ -2,11 +2,17 @@
 # 今日热榜 CLI 安装脚本（macOS / Linux）
 #
 #   curl -fsSL https://rebang.today/cli/install.sh | sh
+#   curl -fsSL https://rebang.today/cli/install.sh | sh -s -- --with-skill
+#
+# 参数：
+#   --with-skill        同时安装 Agent Skill，不询问
+#   --no-skill          不安装 Agent Skill，不询问
 #
 # 环境变量：
 #   REBANG_INSTALL_DIR  安装目录，默认 ~/.local/bin
 #   REBANG_CDN          下载地址，默认 https://rebang.today/cli
 #   REBANG_VERSION      指定版本（如 0.1.0），默认最新版
+#   REBANG_INSTALL_SKILL  1 安装 Agent Skill、0 不安装；不设置时检测到 Agent 才询问
 set -eu
 
 CDN="${REBANG_CDN:-https://rebang.today/cli}"
@@ -64,7 +70,49 @@ manifest_field() {
 /g' | grep "\"$2\"" | sed -n "s/.*\"$3\": *\"\\([^\"]*\\)\".*/\\1/p" | head -n 1
 }
 
+# 列出本机已安装的 Agent（与 rebang skill install 的默认目标一致）。
+detect_agents() {
+	names=""
+	[ -d "$HOME/.claude" ] && names="${names:+$names、}Claude Code"
+	[ -d "$HOME/.codex" ] && names="${names:+$names、}Codex"
+	[ -d "$HOME/.agents" ] && names="${names:+$names、}~/.agents"
+	printf '%s' "$names"
+}
+
+# 决定是否安装 Agent Skill：参数与环境变量优先；否则检测到 Agent 时从终端询问，默认是；
+# 没有终端（CI、管道等）时不安装。输出 yes、no 或 skip（未检测到 Agent，不询问）。
+want_skill() {
+	case "$SKILL_CHOICE" in
+	1) echo yes; return ;;
+	0) echo no; return ;;
+	esac
+	agents="$(detect_agents)"
+	if [ -z "$agents" ]; then
+		echo skip
+		return
+	fi
+	if ! { : </dev/tty; } 2>/dev/null; then
+		echo no
+		return
+	fi
+	printf '检测到 %s，是否安装 rebang Agent Skill？[Y/n] ' "$agents" >&2
+	answer=""
+	IFS= read -r answer </dev/tty || answer=n
+	case "$answer" in
+	"" | [Yy] | [Yy][Ee][Ss]) echo yes ;;
+	*) echo no ;;
+	esac
+}
+
 main() {
+	SKILL_CHOICE="${REBANG_INSTALL_SKILL:-}"
+	for arg in "$@"; do
+		case "$arg" in
+		--with-skill) SKILL_CHOICE=1 ;;
+		--no-skill) SKILL_CHOICE=0 ;;
+		*) die "未知参数：$arg（可用 --with-skill、--no-skill）" ;;
+		esac
+	done
 	need tar
 	need uname
 	platform="$(detect_platform)"
@@ -106,12 +154,25 @@ main() {
 		say "  export PATH=\"$INSTALL_DIR:\$PATH\""
 		;;
 	esac
+	if ! "$INSTALL_DIR/rebang" version >/dev/null 2>&1; then
+		say "提示：程序已安装，但无法运行，请检查系统与架构。"
+		return
+	fi
+
+	skill="$(want_skill)"
+	if [ "$skill" = yes ]; then
+		say ""
+		# 结果输出到终端；失败不影响程序安装。
+		"$INSTALL_DIR/rebang" skill install -o table >&2 || say "Agent Skill 安装失败，稍后可运行 rebang skill install 重试。"
+	fi
 	say ""
 	say "开始使用："
 	say "  rebang               进入交互界面"
-	say "  rebang auth login    登录"
-	say "  rebang skill install 安装 Agent Skill"
-	"$INSTALL_DIR/rebang" version >/dev/null 2>&1 || say "提示：程序已安装，但无法运行，请检查系统与架构。"
+	if [ "$skill" != yes ]; then
+		say "  rebang skill install 安装 Agent Skill，让 Claude Code、Codex 等使用今日热榜"
+	fi
+	say ""
+	say "可选：rebang auth login 登录后可用我的关注、内容监控等功能"
 }
 
 main "$@"

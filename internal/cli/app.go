@@ -49,6 +49,9 @@ type App struct {
 	outputFlag  string
 	apiBaseFlag string
 	format      output.Format
+	// noNotice 表示本次命令不附加版本提醒（如 update 自身）。
+	noNotice bool
+	notice   *noticeCache
 }
 
 // NewApp 使用真实终端创建 App。
@@ -120,7 +123,13 @@ func (a *App) Format() output.Format {
 // Writer 返回结果输出器。
 func (a *App) Writer() output.Writer {
 	t := a.Theme()
-	return output.Writer{Out: a.Stdout, Format: a.Format(), Width: a.TermWidth, Theme: &t}
+	w := output.Writer{Out: a.Stdout, Format: a.Format(), Width: a.TermWidth, Theme: &t}
+	if w.Format == output.JSON {
+		if n := a.Notice(); n != nil {
+			w.Notice = n
+		}
+	}
+	return w
 }
 
 // Theme 返回标准输出使用的样式。

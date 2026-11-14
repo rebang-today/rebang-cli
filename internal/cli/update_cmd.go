@@ -47,6 +47,7 @@ func newUpdateCmd(a *App) *cobra.Command {
 并同步已安装的 Agent Skill。通过 Homebrew 安装时请使用 brew upgrade rebang。`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			a.noNotice = true
 			ctx := cmd.Context()
 			m, err := update.FetchManifest(ctx, a.Config.Manifest())
 			if err != nil {

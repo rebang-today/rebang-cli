@@ -32,6 +32,15 @@ brew install rebang-today/tap/rebang
 | --- | --- |
 | `REBANG_INSTALL_DIR` | 安装目录 |
 | `REBANG_VERSION` | 安装指定版本，如 `0.1.0` |
+| `REBANG_INSTALL_SKILL` | `1` 同时安装 Agent Skill，`0` 不安装 |
+
+检测到本机装有 Claude Code、Codex（`~/.claude`、`~/.codex`、`~/.agents`）时，安装脚本会询问是否同时安装 rebang Agent Skill，直接回车即安装；没有终端可询问时（CI 等）不安装。也可以用参数明确选择：
+
+```bash
+curl -fsSL https://rebang.today/cli/install.sh | sh -s -- --with-skill   # 或 --no-skill
+```
+
+安装后不需要登录即可使用热榜、搜索与 AI 总结；我的关注、内容监控等功能需要时再运行 `rebang auth login`。
 
 也可以从 [GitHub Releases](https://github.com/rebang-today/rebang-cli/releases) 手动下载，或从源码安装（需要 Go 1.26+）：
 
@@ -53,7 +62,7 @@ xattr -d com.apple.quarantine ./rebang
 
 ```bash
 rebang                      # 进入交互界面
-rebang auth login           # 浏览器登录（SSH 等无桌面环境加 --no-browser）
+rebang auth login           # 可选：登录后可用我的关注、内容监控等（SSH 等无桌面环境加 --no-browser）
 rebang list --tab zhihu     # 知乎热榜
 rebang search 大模型        # 搜索
 rebang summary <item_key>   # 条目的 AI 总结（item_key 来自 list -o json）
@@ -151,9 +160,13 @@ rebang monitor hits --unread -n 50 -o json | jq -r '.items[] | "\(.title) \(.url
 
 ## 登录与会员
 
+登录是可选的：热榜、搜索与 AI 总结都不需要登录，我的关注、内容监控等功能需要时再登录。
+
 `rebang auth login` 使用浏览器设备授权：终端显示授权码并打开浏览器，在网站登录并确认后即完成，网站支持的所有登录方式都可以使用。凭证保存在配置目录的 `auth.json`（权限 0600），不使用系统钥匙串。
 
-在 CI 或 Agent 中可以直接注入 Token，优先级高于本地凭证：
+非终端或 `-o json` 时，拿到授权码后会立即在标准错误输出一行 JSON：`{"event":"login_pending","verification_uri":…,"verification_uri_complete":…,"user_code":…,"expires_in":…}`，Agent 可以把链接与授权码转告用户，命令在用户确认后自行退出。
+
+在 CI 或 Agent 中也可以直接注入 Token，优先级高于本地凭证：
 
 ```bash
 export REBANG_TOKEN=...
@@ -171,6 +184,23 @@ rebang skill uninstall
 ```
 
 Skill 内嵌在程序中，`rebang update` 升级后会自动同步已安装的 Skill，保证与程序版本一致。
+
+### 交给 Agent 的安装指引
+
+想让 Claude Code、Codex 等 Agent 自己完成安装，可以把下面这段发给它：
+
+```text
+请帮我安装今日热榜命令行 rebang，并把它的 Agent Skill 装到本机：
+1. 运行 curl -fsSL https://rebang.today/cli/install.sh | sh -s -- --with-skill
+   （Windows 用 PowerShell：$env:REBANG_INSTALL_SKILL=1; irm https://rebang.today/cli/install.ps1 | iex）
+2. 运行 rebang skill install，确认 Skill 已安装（rebang skill status）。
+3. 运行 rebang list --tab zhihu -n 5 -o json 验证可用，这一步不需要登录。
+不需要登录。以后用到我的关注、内容监控等功能时，再按需帮我登录。
+```
+
+安装脚本装在 `~/.local/bin`，如果 Agent 提示找不到 `rebang`，可以用完整路径 `~/.local/bin/rebang` 运行。
+
+Agent 通过 JSON 调用时，如果有新版本或已安装的 Skill 与程序版本不一致，结果的顶层对象会附带 `_notice` 字段（`update`、`skill` 各带一条建议命令），Skill 会让 Agent 在完成任务后提醒你，不会自行升级。设置 `REBANG_NO_NOTICE=1` 可关闭。
 
 ## 配置
 
@@ -190,6 +220,7 @@ theme = "auto"            # auto、dark、light
 | `REBANG_TOKEN` | 访问凭证，优先于本地登录 |
 | `REBANG_CONFIG_DIR` | 配置目录 |
 | `REBANG_API_BASE` | 接口地址，用于本地联调 |
+| `REBANG_NO_NOTICE` | 设为 `1` 时 JSON 结果不附带 `_notice` 版本提醒 |
 
 ## 升级
 
@@ -198,7 +229,7 @@ rebang update           # 升级到最新版本
 rebang update --check   # 只检查
 ```
 
-升级包下载后会校验 sha256 与 minisign 签名。通过 Homebrew 安装的请使用 `brew upgrade rebang`。交互界面每天最多检查一次新版本并在状态栏提示；非交互调用不联网检查。
+升级包下载后会校验 sha256 与 minisign 签名。通过 Homebrew 安装的请使用 `brew upgrade rebang`。交互界面每天最多检查一次新版本并在状态栏提示；JSON 输出也共用这个每天一次的检查（最多等 1.5 秒，失败静默），发现新版本时只在结果的 `_notice` 字段中提示，不输出其他内容。
 
 ## 开发
 

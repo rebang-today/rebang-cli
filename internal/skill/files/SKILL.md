@@ -18,12 +18,25 @@ description: 查询今日热榜（rebang.today）的实时热榜与历史热点�
 | 0 | | 成功 |
 | 1 | `general_error` 等 | 一般错误，把 message 告诉用户 |
 | 2 | `invalid_argument` | 参数错误，检查命令与 ID |
-| 3 | `unauthorized` | 未登录或凭证失效：请用户在终端运行 `rebang auth login`，不要替用户登录 |
+| 3 | `unauthorized` | 未登录或凭证失效：按下面“按需登录”询问用户，不要自行登录 |
 | 4 | `membership_required` | 需要会员：如实告知用户，不要编造结果 |
 | 5 | `rate_limited` | 被限流：稍等再试，减少调用次数 |
 | 6 | `network_error` / `server_error` | 网络或服务端错误：可重试一次 |
 | 7 | `upgrade_required` | 版本过低：请用户运行 `rebang update` |
 | 8 | `summary_not_found` | 该条目暂无 AI 总结：不是错误，改用标题、`desc` 或原链接，不要编造总结 |
+
+### 版本提醒 `_notice`
+
+JSON 结果的顶层对象可能带有 `_notice` 字段，表示程序有新版本（`update`）或本 skill 与程序版本不一致（`skill`）：
+
+```json
+"_notice": {
+  "update": {"current": "1.0.0", "latest": "1.1.0", "command": "rebang update"},
+  "skill": {"installed": "0.9.0", "expected": "1.0.0", "dirs": ["…"], "command": "rebang skill install"}
+}
+```
+
+先照常完成用户的任务，最后用一句话告诉用户可以运行对应的 `command`。不要自行升级或重装，也不要因为它中断任务。用户不想看到时可设置 `REBANG_NO_NOTICE=1`。
 
 ## 浏览热榜
 
@@ -71,6 +84,21 @@ JSON：`summary_short`（一句话总结）与 `detail`。`detail` 中的分区�
 做话题研究、需要多次搜索并汇总时，按 [references/research.md](references/research.md) 的流程进行。
 
 ## 账号
+
+热榜、搜索、AI 总结都不需要登录。我的关注、内容监控等功能需要登录，登录一律按需进行。
+
+### 按需登录
+
+只有命令返回退出码 3 时，才告诉用户“这个功能需要登录今日热榜”，并询问是否现在登录。不要事先要求登录，也不要在用户没同意时发起登录。
+
+用户同意后：
+
+1. 在后台运行 `rebang auth login --no-browser`。它会立刻在标准错误输出链接和授权码，以及一行 JSON：`{"event":"login_pending","verification_uri":"…","verification_uri_complete":"…","user_code":"…","expires_in":600}`。
+2. 把链接（优先 `verification_uri_complete`）和授权码原样转告用户，请用户在浏览器中打开链接、核对授权码并确认。不要改写或缩短链接。
+3. 等命令自己退出，不要中途结束它。用户确认后它会以退出码 0 退出；拒绝或授权码过期时会以非 0 退出，告诉用户结果即可。
+4. 运行 `rebang auth status` 确认已登录，再重试刚才的命令。
+
+用户拒绝时，继续用不需要登录的功能完成任务，并说明哪些内容因未登录而缺失。
 
 ```bash
 rebang auth status    # 是否登录；未登录退出码 3

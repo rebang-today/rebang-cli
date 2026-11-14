@@ -1,16 +1,52 @@
 # 今日热榜 CLI 安装脚本（Windows）
 #
 #   irm https://rebang.today/cli/install.ps1 | iex
+#   & ([scriptblock]::Create((irm https://rebang.today/cli/install.ps1))) --with-skill
+#
+# 参数：
+#   --with-skill        同时安装 Agent Skill，不询问
+#   --no-skill          不安装 Agent Skill，不询问
 #
 # 环境变量：
 #   REBANG_INSTALL_DIR  安装目录，默认 %LOCALAPPDATA%\Programs\rebang
 #   REBANG_CDN          下载地址，默认 https://rebang.today/cli
 #   REBANG_VERSION      指定版本（如 0.1.0），默认最新版
+#   REBANG_INSTALL_SKILL  1 安装 Agent Skill、0 不安装；不设置时检测到 Agent 才询问
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-function Install-Rebang {
+# 列出本机已安装的 Agent（与 rebang skill install 的默认目标一致）。
+function Get-RebangAgents {
+    $names = @()
+    if (Test-Path (Join-Path $HOME '.claude')) { $names += 'Claude Code' }
+    if (Test-Path (Join-Path $HOME '.codex')) { $names += 'Codex' }
+    if (Test-Path (Join-Path $HOME '.agents')) { $names += '~/.agents' }
+    return $names
+}
+
+# 决定是否安装 Agent Skill：参数与环境变量优先；否则检测到 Agent 时询问，默认是；
+# 非交互（CI、输入被重定向）时不安装。返回 yes、no 或 skip（未检测到 Agent，不询问）。
+function Get-SkillChoice([string]$choice) {
+    if ($choice -eq '1') { return 'yes' }
+    if ($choice -eq '0') { return 'no' }
+    $agents = @(Get-RebangAgents)
+    if ($agents.Count -eq 0) { return 'skip' }
+    if (-not [Environment]::UserInteractive -or [Console]::IsInputRedirected) { return 'no' }
+    $answer = Read-Host "检测到 $($agents -join '、')，是否安装 rebang Agent Skill？[Y/n]"
+    if ($answer -match '^\s*(y|yes)?\s*$') { return 'yes' }
+    return 'no'
+}
+
+function Install-Rebang([string[]]$opts) {
+    $skillChoice = $env:REBANG_INSTALL_SKILL
+    foreach ($o in $opts) {
+        switch ($o) {
+            '--with-skill' { $skillChoice = '1' }
+            '--no-skill' { $skillChoice = '0' }
+            default { throw "未知参数：$o（可用 --with-skill、--no-skill）" }
+        }
+    }
     $cdn = if ($env:REBANG_CDN) { $env:REBANG_CDN.TrimEnd('/') } else { 'https://rebang.today/cli' }
     $dir = if ($env:REBANG_INSTALL_DIR) { $env:REBANG_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Programs\rebang' }
 
@@ -62,14 +98,25 @@ function Install-Rebang {
             $env:Path = "$env:Path;$dir"
             Write-Host "已把 $dir 加入用户 PATH，重新打开终端后生效。"
         }
+
+        $skill = Get-SkillChoice $skillChoice
+        if ($skill -eq 'yes') {
+            Write-Host ''
+            # 失败不影响程序安装。
+            & $target skill install -o table
+            if ($LASTEXITCODE -ne 0) { Write-Host 'Agent Skill 安装失败，稍后可运行 rebang skill install 重试。' }
+        }
         Write-Host ''
         Write-Host '开始使用：'
         Write-Host '  rebang               进入交互界面'
-        Write-Host '  rebang auth login    登录'
-        Write-Host '  rebang skill install 安装 Agent Skill'
+        if ($skill -ne 'yes') {
+            Write-Host '  rebang skill install 安装 Agent Skill，让 Claude Code、Codex 等使用今日热榜'
+        }
+        Write-Host ''
+        Write-Host '可选：rebang auth login 登录后可用我的关注、内容监控等功能'
     } finally {
         Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
     }
 }
 
-Install-Rebang
+Install-Rebang $args

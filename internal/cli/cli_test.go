@@ -549,3 +549,45 @@ func fakeHits(q url.Values) map[string]any {
 	}
 	return map[string]any{"items": all[off:end], "next_cursor": next, "has_more": next != "", "revision_at": 1, "revision_id": 1, "new_count": 0}
 }
+
+// TestLoginPromptBeforePolling 确认非终端时，链接、授权码与结构化的一行 JSON
+// 在第一次轮询之前就已写到标准错误，Agent 可以立刻转告用户。
+func TestLoginPromptBeforePolling(t *testing.T) {
+	h := newHarness(t)
+	var errb, out bytes.Buffer
+	var atFirstSleep string
+	a := &App{
+		Stdin: strings.NewReader(""), Stdout: &out, Stderr: &errb, Config: config.Default(),
+		OpenURL: func(string) error { t.Fatal("--no-browser 不应打开浏览器"); return nil },
+		Now:     time.Now,
+		Sleep: func(context.Context, time.Duration) error {
+			if atFirstSleep == "" {
+				atFirstSleep = errb.String()
+			}
+			return nil
+		},
+	}
+	if code := Execute(a, []string{"auth", "login", "--no-browser"}); code != 0 {
+		t.Fatalf("%d %s", code, errb.String())
+	}
+	if !strings.Contains(atFirstSleep, "WXYZ-2345") || !strings.Contains(atFirstSleep, "https://rebang.today/cli/authorize") {
+		t.Fatalf("轮询前应已输出链接与授权码：%q", atFirstSleep)
+	}
+	var line string
+	for _, l := range strings.Split(atFirstSleep, "\n") {
+		if strings.HasPrefix(l, "{") {
+			line = l
+		}
+	}
+	var p LoginPending
+	decode(t, line, &p)
+	if p.Event != "login_pending" || p.UserCode != "WXYZ-2345" || p.VerificationURI != "https://rebang.today/cli/authorize" ||
+		!strings.Contains(p.VerificationURIComplete, "user_code=WXYZ-2345") || p.ExpiresIn != 600 {
+		t.Fatalf("结构化行不对：%s", line)
+	}
+	// 终端表格模式不输出这一行。
+	_, stderr, _ := h.run(true, "auth", "login", "--no-browser")
+	if strings.Contains(stderr, "login_pending") {
+		t.Fatal("终端中不应输出 JSON 行")
+	}
+}

@@ -2,6 +2,7 @@
 package output
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -105,7 +106,12 @@ type Writer struct {
 	Width int
 	// Theme 是 table 格式使用的样式，零值等同于无颜色。
 	Theme *ui.Theme
+	// Notice 非空时，json 格式在顶层对象中附加 "_notice" 字段（D-63）；结果不是对象时忽略。
+	Notice any
 }
+
+// NoticeField 是 JSON 结果中附加的版本提醒字段名。
+const NoticeField = "_notice"
 
 func (w Writer) theme() ui.Theme {
 	if w.Theme != nil {
@@ -118,6 +124,9 @@ func (w Writer) theme() ui.Theme {
 func (w Writer) Write(r Result) error {
 	switch w.Format {
 	case JSON:
+		if w.Notice != nil {
+			return writeJSONWithNotice(w.Out, r.Data, w.Notice)
+		}
 		return WriteJSON(w.Out, r.Data)
 	case MD:
 		if r.Markdown != nil {
@@ -144,6 +153,40 @@ func (w Writer) Write(r Result) error {
 		_, err := io.WriteString(w.Out, s)
 		return err
 	}
+}
+
+// writeJSONWithNotice 在顶层 JSON 对象的末尾加上 "_notice"，保留原有字段顺序。
+func writeJSONWithNotice(out io.Writer, v, notice any) error {
+	var data, nb bytes.Buffer
+	for _, x := range []struct {
+		buf *bytes.Buffer
+		v   any
+	}{{&data, v}, {&nb, notice}} {
+		enc := json.NewEncoder(x.buf)
+		enc.SetEscapeHTML(false)
+		if err := enc.Encode(x.v); err != nil {
+			return err
+		}
+	}
+	d := bytes.TrimSpace(data.Bytes())
+	if len(d) < 2 || d[0] != '{' {
+		return WriteJSON(out, v)
+	}
+	var merged bytes.Buffer
+	merged.Write(d[:len(d)-1])
+	if len(bytes.TrimSpace(d[1:len(d)-1])) > 0 {
+		merged.WriteByte(',')
+	}
+	merged.WriteString(`"` + NoticeField + `":`)
+	merged.Write(bytes.TrimSpace(nb.Bytes()))
+	merged.WriteByte('}')
+	var pretty bytes.Buffer
+	if err := json.Indent(&pretty, merged.Bytes(), "", "  "); err != nil {
+		return err
+	}
+	pretty.WriteByte('\n')
+	_, err := out.Write(pretty.Bytes())
+	return err
 }
 
 // WriteJSON 输出带缩进的 JSON，不转义 HTML 字符。

@@ -26,9 +26,13 @@ func NewRootCmd(a *App) *cobra.Command {
 
 退出码：0 成功，1 一般错误，2 参数错误，3 未登录或凭证失效，
 4 需要会员，5 被限流，6 网络错误，7 需要升级，
-8 条目暂无 AI 总结（summary）。`,
+8 条目暂无 AI 总结（summary）。
+
+热榜、搜索、AI 总结不需要登录；我的关注、内容监控等功能需要时再登录。
+JSON 输出时，有新版本或已安装的 Agent Skill 版本不一致会在结果中附带 _notice 字段，
+设置 REBANG_NO_NOTICE=1 可关闭。`,
 		Example: `  rebang                         进入交互界面
-  rebang auth login              浏览器授权登录
+  rebang auth login              可选：登录后使用关注、内容监控
   rebang menus                   查看菜单
   rebang list --tab weibo        查看微博热搜
   rebang search 大模型           搜索热榜条目
