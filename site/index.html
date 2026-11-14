@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>今日热榜 CLI</title>
+<meta name="description" content="今日热榜（rebang.today）官方命令行客户端：在终端里看各平台热榜、搜索热点、读 AI 总结，也能交给 Claude Code、Codex 等 Agent 使用。">
+<meta name="color-scheme" content="light dark">
+<style>
+:root {
+  --bg: #ffffff;
+  --fg: #111827;
+  --muted: #6b7280;
+  --line: #e5e7eb;
+  --card: #f9fafb;
+  --code-bg: #f3f4f6;
+  --accent: #2c5cf5;
+  --accent-soft: #eef2ff;
+  --top: #d9480f;
+  --term-bg: #0f172a;
+  --term-fg: #e5e7eb;
+  --term-dim: #94a3b8;
+  --term-accent: #7aa2f7;
+  --term-top: #f7670d;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b0d12;
+    --fg: #e5e7eb;
+    --muted: #9ca3af;
+    --line: #262b36;
+    --card: #12151c;
+    --code-bg: #171b24;
+    --accent: #7aa2f7;
+    --accent-soft: #1f2a44;
+    --top: #f7670d;
+    --term-bg: #05070b;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.7 -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Segoe UI", sans-serif;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, pre, kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+code { background: var(--code-bg); padding: .1em .35em; border-radius: 4px; font-size: .9em; }
+.wrap { max-width: 860px; margin: 0 auto; padding: 0 20px; }
+header.top { border-bottom: 1px solid var(--line); }
+header.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 56px; }
+.brand { font-weight: 700; color: var(--fg); display: flex; align-items: center; gap: 8px; }
+.brand-mark { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 6px; background: var(--accent); color: #fff; font-size: 14px; }
+@media (prefers-color-scheme: dark) { .brand-mark { background: #3d63d8; } }
+nav.links { display: flex; gap: 18px; font-size: 14px; }
+nav.links a { color: var(--muted); }
+.hero { padding: 48px 0 24px; }
+.hero h1 { font-size: 36px; line-height: 1.25; margin: 0 0 12px; letter-spacing: .5px; }
+.hero p.lead { font-size: 18px; color: var(--muted); margin: 0 0 28px; max-width: 640px; }
+section { padding: 28px 0; border-top: 1px solid var(--line); }
+section:first-of-type { border-top: 0; }
+h2 { font-size: 22px; margin: 0 0 14px; }
+h3 { font-size: 17px; margin: 22px 0 8px; }
+p { margin: 0 0 12px; }
+ul { padding-left: 1.3em; margin: 0 0 12px; }
+li { margin: 4px 0; }
+.muted { color: var(--muted); }
+.small { font-size: 14px; }
+
+.tabs { display: inline-flex; gap: 4px; padding: 4px; background: var(--code-bg); border-radius: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.tabs button {
+  border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 14px;
+  padding: 6px 14px; border-radius: 7px; cursor: pointer;
+}
+.tabs button[aria-selected="true"] { background: var(--bg); color: var(--fg); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.panel[hidden] { display: none; }
+
+.cmd {
+  position: relative; display: flex; align-items: flex-start; gap: 10px;
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px;
+  padding: 12px 12px 12px 16px; margin: 8px 0 12px;
+}
+.cmd pre { margin: 0; flex: 1; min-width: 0; overflow-x: auto; font-size: 14px; line-height: 1.7; white-space: pre; }
+.cmd pre .c { color: var(--muted); }
+.copy {
+  flex: none; border: 1px solid var(--line); background: var(--bg); color: var(--fg);
+  font: inherit; font-size: 13px; padding: 3px 10px; border-radius: 6px; cursor: pointer;
+}
+.copy:hover { border-color: var(--accent); color: var(--accent); }
+.copy.done { color: #15803d; border-color: #15803d; }
+@media (prefers-color-scheme: dark) { .copy.done { color: #4ade80; border-color: #4ade80; } }
+
+.term {
+  background: var(--term-bg); color: var(--term-fg); border-radius: 12px; overflow: hidden;
+  border: 1px solid #1f2937; box-shadow: 0 10px 30px rgba(15, 23, 42, .18);
+}
+.term-bar { display: flex; gap: 6px; padding: 10px 14px; border-bottom: 1px solid #1f2937; }
+.term-bar i { width: 10px; height: 10px; border-radius: 50%; background: #334155; display: block; }
+.term-body { padding: 14px 16px 16px; font: 13.5px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", "PingFang SC", "Microsoft YaHei", monospace; overflow-x: auto; }
+.term .tl { white-space: pre; }
+.term .gap { margin-top: 14px; }
+.term .tt { width: auto; margin: 2px 0 8px; font-size: inherit; border-collapse: collapse; }
+.term .tt td { border: 0; padding: 0 18px 0 0; white-space: nowrap; }
+.term .tt tr.d td { padding-bottom: 2px; border-bottom: 1px solid #334155; }
+.term .tt tr:nth-child(2) td { padding-top: 4px; }
+.term .p { color: var(--term-accent); }
+.term .d { color: var(--term-dim); }
+.term .t { color: var(--term-top); font-weight: 700; }
+.caption { font-size: 13px; color: var(--muted); margin-top: 8px; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin: 8px 0 4px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.card b { display: block; margin-bottom: 4px; }
+.card p { margin: 0; font-size: 14px; color: var(--muted); }
+
+table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 6px 0 12px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; }
+.table-wrap { overflow-x: auto; }
+.note { background: var(--accent-soft); border-radius: 10px; padding: 12px 16px; font-size: 14px; margin: 10px 0; }
+footer { border-top: 1px solid var(--line); padding: 28px 0 40px; font-size: 14px; color: var(--muted); }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 18px; justify-content: space-between; }
+
+@media (max-width: 600px) {
+  .wrap { padding: 0 16px; }
+  .hero { padding: 32px 0 16px; }
+  .hero h1 { font-size: 28px; }
+  .hero p.lead { font-size: 16px; }
+  nav.links { gap: 12px; }
+  nav.links .opt { display: none; }
+  .cmd pre { font-size: 13px; }
+  .term-body { font-size: 12px; }
+  .term .tt .u { display: none; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="./"><span class="brand-mark">榜</span>今日热榜 CLI</a>
+    <nav class="links">
+      <a href="#install">安装</a>
+      <a class="opt" href="#agent">Agent</a>
+      <a href="https://github.com/rebang-today/rebang-cli">GitHub</a>
+      <a class="opt" href="https://rebang.today">rebang.today</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="hero">
+    <h1>今日热榜 CLI</h1>
+    <p class="lead">今日热榜（rebang.today）官方命令行客户端：在终端里浏览微博、知乎、B 站、GitHub 等平台的热榜，搜索热点，阅读 AI 总结；输出 JSON，也能交给 Claude Code、Codex 等 AI Agent 使用。</p>
+
+    <div class="term" aria-label="终端效果示意">
+      <div class="term-bar"><i></i><i></i><i></i></div>
+<div class="term-body">
+<div class="tl"><span class="p">$</span> rebang list --tab weibo -n 5</div>
+<table class="tt">
+<tr class="d"><td>#</td><td>标题</td><td>热度</td><td class="u">链接</td></tr>
+<tr><td class="t">1</td><td>示例热搜标题一</td><td class="d">235.6万</td><td class="u">https://s.weibo.com/…</td></tr>
+<tr><td class="t">2</td><td>示例热搜标题二</td><td class="d">181.2万</td><td class="u">https://s.weibo.com/…</td></tr>
+<tr><td class="t">3</td><td>示例热搜标题三</td><td class="d">96.4万</td><td class="u">https://s.weibo.com/…</td></tr>
+<tr><td>4</td><td>示例热搜标题四</td><td class="d">72.0万</td><td class="u">https://s.weibo.com/…</td></tr>
+<tr><td>5</td><td>示例热搜标题五</td><td class="d">58.9万</td><td class="u">https://s.weibo.com/…</td></tr>
+</table>
+<div class="tl d">用浏览器打开第 N 条：rebang open N --tab weibo</div>
+<div class="tl gap"><span class="p">$</span> rebang list --tab zhihu -n 1 -o json | jq '.items[0] | {rank, title, item_key}'</div>
+<div class="tl">{ "rank": 1, "title": "示例问题标题", "item_key": "…" }</div>
+</div>
+    </div>
+    <p class="caption">示意内容，实际以实时热榜为准。不带参数运行 <code>rebang</code> 进入全屏交互界面，支持键盘与鼠标。</p>
+  </div>
+
+  <section id="install">
+    <h2>安装</h2>
+    <div class="tabs" role="tablist" aria-label="选择系统">
+      <button role="tab" id="tab-unix" aria-selected="true" aria-controls="panel-unix" data-os="unix">macOS / Linux</button>
+      <button role="tab" id="tab-win" aria-selected="false" aria-controls="panel-win" data-os="win">Windows</button>
+      <button role="tab" id="tab-brew" aria-selected="false" aria-controls="panel-brew" data-os="brew">Homebrew</button>
+    </div>
+
+    <div class="panel" role="tabpanel" id="panel-unix" aria-labelledby="tab-unix">
+      <div class="cmd"><pre>curl -fsSL https://cli.rebang.today/install.sh | sh</pre><button class="copy" type="button">复制</button></div>
+      <p class="small muted">默认安装到 <code>~/.local/bin/rebang</code>；不在 PATH 中时脚本会提示需要加入的那一行。</p>
+    </div>
+    <div class="panel" role="tabpanel" id="panel-win" aria-labelledby="tab-win" hidden>
+      <div class="cmd"><pre>irm https://cli.rebang.today/install.ps1 | iex</pre><button class="copy" type="button">复制</button></div>
+      <p class="small muted">在 PowerShell 中运行。安装到 <code>%LOCALAPPDATA%\Programs\rebang</code> 并加入用户 PATH，重新打开终端后生效。</p>
+    </div>
+    <div class="panel" role="tabpanel" id="panel-brew" aria-labelledby="tab-brew" hidden>
+      <div class="cmd"><pre>brew install rebang-today/tap/rebang</pre><button class="copy" type="button">复制</button></div>
+      <p class="small muted">适用于 macOS。升级用 <code>brew upgrade rebang</code>。</p>
+    </div>
+
+    <h3>同时安装 Agent Skill</h3>
+    <p>安装脚本检测到本机装有 Claude Code、Codex（存在 <code>~/.claude</code>、<code>~/.codex</code> 或 <code>~/.agents</code>）时，会询问“是否安装 rebang Agent Skill？[Y/n]”，直接回车即安装；没有终端可询问时（CI 等）不安装。也可以明确指定：</p>
+    <div class="cmd"><pre>curl -fsSL https://cli.rebang.today/install.sh | sh -s -- --with-skill   <span class="c"># 或 --no-skill</span></pre><button class="copy" type="button">复制</button></div>
+    <div class="table-wrap">
+      <table>
+        <tr><th>环境变量</th><th>说明</th></tr>
+        <tr><td><code>REBANG_INSTALL_SKILL</code></td><td><code>1</code> 同时安装 Agent Skill，<code>0</code> 不安装，均不再询问</td></tr>
+        <tr><td><code>REBANG_INSTALL_DIR</code></td><td>安装目录</td></tr>
+        <tr><td><code>REBANG_VERSION</code></td><td>安装指定版本，如 <code>0.1.0</code></td></tr>
+      </table>
+    </div>
+    <p class="small muted">Windows 可先设置 <code>$env:REBANG_INSTALL_SKILL=1</code> 再运行安装命令。安装脚本会校验安装包的 sha256。</p>
+  </section>
+
+  <section id="start">
+    <h2>快速上手</h2>
+    <div class="cmd"><pre>rebang                          <span class="c"># 进入交互界面</span>
+rebang list --tab zhihu         <span class="c"># 知乎热榜</span>
+rebang list --tab weibo -n 10   <span class="c"># 微博热搜前 10 条</span>
+rebang search 大模型            <span class="c"># 搜索热榜条目</span>
+rebang summary &lt;item_key&gt;       <span class="c"># 条目的 AI 总结（item_key 来自 -o json）</span>
+rebang menus                    <span class="c"># 菜单列表，再用 tabs / nodes 找榜单</span></pre><button class="copy" type="button">复制</button></div>
+
+    <h3>JSON 输出</h3>
+    <p>输出到终端时默认是表格，被管道或 Agent 读取时默认 JSON，也可以用 <code>-o json|md|table</code> 指定。结果写标准输出，提示写标准错误，管道里的 JSON 可以直接解析：</p>
+    <div class="cmd"><pre>rebang list --tab weibo -n 10 | jq -r '.items[] | "\(.rank). \(.title)"'</pre><button class="copy" type="button">复制</button></div>
+
+    <h3>登录（可选）</h3>
+    <p>热榜、搜索与 AI 总结都不需要登录。需要“我的关注”、内容监控等功能时再登录：</p>
+    <div class="cmd"><pre>rebang auth login               <span class="c"># 浏览器授权；SSH 等无桌面环境加 --no-browser</span>
+rebang following                <span class="c"># 我的关注</span>
+rebang monitor hits --unread    <span class="c"># 内容监控中未读的命中内容</span></pre><button class="copy" type="button">复制</button></div>
+    <p class="small muted">每个命令的详细参数见 <code>rebang &lt;命令&gt; --help</code>。</p>
+  </section>
+
+  <section id="agent">
+    <h2>给 AI Agent 使用</h2>
+    <p>rebang 内置一份 Agent Skill，安装后 Claude Code、Codex 等 Agent 就知道如何查热榜、搜索与读取 AI 总结。</p>
+    <div class="cmd"><pre>rebang skill install            <span class="c"># 安装到本机已有的 Agent</span>
+rebang skill install --agent claude
+rebang skill status
+rebang skill uninstall</pre><button class="copy" type="button">复制</button></div>
+    <div class="grid">
+      <div class="card"><b>随版本同步</b><p>Skill 内嵌在程序中，<code>rebang update</code> 升级后自动同步已安装的 Skill。</p></div>
+      <div class="card"><b>按需登录</b><p>只有遇到需要登录的功能时，Agent 才会询问你，并把授权链接和授权码转告给你。</p></div>
+      <div class="card"><b>版本提醒</b><p>有新版本时 JSON 结果附带 <code>_notice</code>，Agent 在完成任务后提醒你，不会自行升级。设置 <code>REBANG_NO_NOTICE=1</code> 关闭。</p></div>
+    </div>
+    <h3>交给 Agent 安装</h3>
+    <p>把下面这段发给你的 Agent：</p>
+    <div class="cmd"><pre>请帮我安装今日热榜命令行 rebang，并把它的 Agent Skill 装到本机：
+1. 运行 curl -fsSL https://cli.rebang.today/install.sh | sh -s -- --with-skill
+   （Windows 用 PowerShell：$env:REBANG_INSTALL_SKILL=1; irm https://cli.rebang.today/install.ps1 | iex）
+2. 运行 rebang skill install，确认 Skill 已安装（rebang skill status）。
+3. 运行 rebang list --tab zhihu -n 5 -o json 验证可用，这一步不需要登录。
+不需要登录。以后用到我的关注、内容监控等功能时，再按需帮我登录。</pre><button class="copy" type="button">复制</button></div>
+  </section>
+
+  <section id="update">
+    <h2>更新与卸载</h2>
+    <div class="cmd"><pre>rebang update            <span class="c"># 升级到最新版本，并同步已安装的 Agent Skill</span>
+rebang update --check    <span class="c"># 只检查是否有新版本</span></pre><button class="copy" type="button">复制</button></div>
+    <p class="small muted">通过 Homebrew 安装的请使用 <code>brew upgrade rebang</code>。</p>
+
+    <h3>卸载</h3>
+    <div class="table-wrap">
+      <table>
+        <tr><th>步骤</th><th>macOS / Linux</th><th>Windows</th></tr>
+        <tr><td>移除 Agent Skill</td><td colspan="2"><code>rebang skill uninstall</code></td></tr>
+        <tr><td>删除程序</td><td><code>rm ~/.local/bin/rebang</code><br><span class="muted">Homebrew：<code>brew uninstall rebang</code></span></td><td>删除 <code>%LOCALAPPDATA%\Programs\rebang</code></td></tr>
+        <tr><td>删除配置与凭证（可选）</td><td><code>rm -r ~/.config/rebang</code></td><td>删除 <code>%AppData%\rebang</code></td></tr>
+      </table>
+    </div>
+    <p class="small muted">删除凭证前可先运行 <code>rebang auth logout</code>，在服务端吊销本机的登录。</p>
+  </section>
+
+  <section id="verify">
+    <h2>校验与安全</h2>
+    <ul>
+      <li>版本信息：<a href="https://cli.rebang.today/manifest.json"><code>https://cli.rebang.today/manifest.json</code></a>，包含最新版本、各平台下载地址与 sha256。</li>
+      <li>安装包位于 <code>https://cli.rebang.today/v&lt;版本&gt;/</code>，同目录下有 <code>checksums.txt</code> 与每个安装包的 <code>.minisig</code> 签名；也可以从 <a href="https://github.com/rebang-today/rebang-cli/releases">GitHub Releases</a> 下载。</li>
+      <li><code>rebang update</code> 会校验 sha256 与 minisign 签名，公钥内置在程序中，ID 为 <code>05B5851321C39815</code>。</li>
+    </ul>
+    <p>手动校验下载的安装包：</p>
+    <div class="cmd"><pre>minisign -Vm rebang_&lt;版本&gt;_&lt;系统&gt;_&lt;架构&gt;.tar.gz \
+  -P RWQVmMMhE4W1BeDo1A9XochNm6l4wkPvqzzVUZdIM4yf9/gEqyg0vG/y</pre><button class="copy" type="button">复制</button></div>
+    <div class="note">macOS 上用浏览器手动下载的程序可能提示“无法验证开发者”，解压后执行 <code>xattr -d com.apple.quarantine ./rebang</code> 即可；通过安装脚本或 Homebrew 安装不受影响。</div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>今日热榜 CLI · Apache-2.0 开源</span>
+    <span><a href="https://github.com/rebang-today/rebang-cli">GitHub：rebang-today/rebang-cli</a> · <a href="https://rebang.today">今日热榜 rebang.today</a></span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var tabs = document.querySelectorAll('.tabs button');
+  function select(os) {
+    for (var i = 0; i < tabs.length; i++) {
+      var on = tabs[i].getAttribute('data-os') === os;
+      tabs[i].setAttribute('aria-selected', on ? 'true' : 'false');
+      document.getElementById(tabs[i].getAttribute('aria-controls')).hidden = !on;
+    }
+  }
+  for (var i = 0; i < tabs.length; i++) {
+    tabs[i].addEventListener('click', function () { select(this.getAttribute('data-os')); });
+  }
+  if (/Windows/i.test(navigator.userAgent)) select('win');
+
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+    return new Promise(function (resolve, reject) {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy') ? resolve() : reject(); } catch (e) { reject(e); }
+      document.body.removeChild(ta);
+    });
+  }
+  var buttons = document.querySelectorAll('.copy');
+  for (var j = 0; j < buttons.length; j++) {
+    buttons[j].addEventListener('click', function () {
+      var btn = this;
+      // 复制时去掉行尾的“# 注释”，便于直接粘贴运行；多行说明文字原样复制。
+      var pre = btn.parentNode.querySelector('pre');
+      var clone = pre.cloneNode(true);
+      var notes = clone.querySelectorAll('.c');
+      for (var k = 0; k < notes.length; k++) notes[k].parentNode.removeChild(notes[k]);
+      var text = clone.textContent.split('\n').map(function (l) { return l.replace(/\s+$/, ''); }).join('\n').trim();
+      copyText(text).then(function () {
+        btn.textContent = '已复制'; btn.classList.add('done');
+        setTimeout(function () { btn.textContent = '复制'; btn.classList.remove('done'); }, 1500);
+      }, function () { btn.textContent = '请手动复制'; });
+    });
+  }
+})();
+</script>
+</body>
+</html>

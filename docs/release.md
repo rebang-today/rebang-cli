@@ -31,7 +31,8 @@ cli.rebang.today  ──CNAME──▶  OSS Bucket rebang-cli（公共读，根�
 2. 在 Bucket 的“域名管理”中绑定自定义域名 `cli.rebang.today`，上传证书或使用托管证书，开启 HTTPS。
 3. 在 DNS 中添加 CNAME：`cli` → OSS 给出的 Bucket 域名。
 4. 创建 RAM 子账号，授权策略只允许写入该 Bucket（`oss:PutObject`，资源 `acs:oss:*:*:rebang-cli/*`；流水线读取线上 manifest 走公开地址，不需要读权限），生成 AccessKey 填入下面的 Secrets。
-5. 验证：`curl -I https://cli.rebang.today/manifest.json` 在首次发版后返回 200 与 `Cache-Control: max-age=60`。
+5. 在 Bucket 的“静态页面”设置中把默认首页设为 `index.html`，访问 `https://cli.rebang.today/` 即显示安装教程页。
+6. 验证：`curl -I https://cli.rebang.today/manifest.json` 在首次发版后返回 200 与 `Cache-Control: max-age=60`。
 
 ### 3. GitHub 配置
 
@@ -64,7 +65,7 @@ git push origin v0.1.0
 2. 生成 `checksums.txt`（sha256）与每个安装包的 `.minisig` 签名；
 3. 发布 GitHub Releases，更新 Homebrew tap；
 4. 用内置公钥重新校验全部签名；
-5. 上传安装包、签名、`checksums.txt` 到 Bucket 的 `v<版本>/`（`Cache-Control: public, max-age=31536000, immutable`），上传根目录的 `install.sh`、`install.ps1`（`max-age=60`）；
+5. 上传安装包、签名、`checksums.txt` 到 Bucket 的 `v<版本>/`（`Cache-Control: public, max-age=31536000, immutable`），上传根目录的 `install.sh`、`install.ps1`（`max-age=60`）与首页 `index.html`（`site/index.html`，`max-age=300`）；
 6. **最后**生成并上传根目录的 `manifest.json`（`max-age=60`）。此前确认下载站上的安装包已可下载。
 
 带 `-` 的预发布版本（如 `v0.2.0-rc.1`）只发布到 GitHub Releases，不上传下载站、不更新 manifest，已安装的用户不会收到升级。
@@ -73,6 +74,7 @@ git push origin v0.1.0
 
 ```
 https://cli.rebang.today/
+├── index.html        # 安装教程页，源文件 site/index.html
 ├── manifest.json
 ├── install.sh
 ├── install.ps1
