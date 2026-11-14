@@ -69,7 +69,7 @@ func NewRootCmd(a *App) *cobra.Command {
 			root.AddCommand(c)
 		}
 	}
-	add("query", newMenusCmd(a), newTabsCmd(a), newNodesCmd(a), newListCmd(a), newSearchCmd(a), newFollowingCmd(a), newOpenCmd(a))
+	add("query", newMenusCmd(a), newTabsCmd(a), newNodesCmd(a), newListCmd(a), newSearchCmd(a), newSummaryCmd(a), newFollowingCmd(a), newOpenCmd(a))
 	add("account", newAuthCmd(a), newAccountCmd(a))
 	add("tool", newSkillCmd(a), newUpdateCmd(a), newDoctorCmd(a), newVersionCmd(a))
 	localizeHelp(root)

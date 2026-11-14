@@ -16,6 +16,8 @@ const (
 	ExitRateLimited = 5
 	ExitNetwork     = 6
 	ExitUpgrade     = 7
+	// ExitNoSummary 条目暂无 AI 总结（rebang summary）。
+	ExitNoSummary = 8
 )
 
 // 错误码，与退出码一一对应的大类之外允许更细的 code。
@@ -30,6 +32,7 @@ const (
 	CodeUpgradeRequired    = "upgrade_required"
 	CodeNotFound           = "not_found"
 	CodeForbidden          = "forbidden"
+	CodeSummaryNotFound    = "summary_not_found"
 )
 
 // Error 是 CLI 对外输出的结构化错误。

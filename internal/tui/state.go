@@ -30,6 +30,8 @@ type posState struct {
 	Sources map[string]string `json:"sources,omitempty"`
 	// Subs 按“菜单 ID/来源 key”记录上次手动选中的子榜单 key。
 	Subs map[string]string `json:"subs,omitempty"`
+	// Preview 是双栏底部的 AI 总结预览是否打开，缺省为打开（D-26）。
+	Preview *bool `json:"preview,omitempty"`
 }
 
 // loadPosState 读取状态文件；不存在、损坏或版本不认识时返回空记忆。
@@ -79,6 +81,8 @@ func (m *model) snapshot() posState {
 	for k, v := range m.subMem {
 		s.Subs[k] = v
 	}
+	preview := !m.previewOff
+	s.Preview = &preview
 	return s
 }
 
@@ -94,7 +98,15 @@ func (m *model) markDirty() tea.Cmd {
 
 // SaveState 立即写入当前位置，退出时调用。读写失败不影响使用，直接忽略。
 func (m *model) SaveState() {
-	if m.opt.StatePath == "" || len(m.menus) == 0 {
+	if m.opt.StatePath == "" {
+		return
+	}
+	if len(m.menus) == 0 {
+		// 菜单还没加载：只更新预览开关，其余沿用启动时读到的记忆。
+		s := m.mem
+		preview := !m.previewOff
+		s.Preview = &preview
+		_ = savePosState(m.opt.StatePath, s)
 		return
 	}
 	m.savePos()

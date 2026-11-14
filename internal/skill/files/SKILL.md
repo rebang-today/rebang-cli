@@ -23,6 +23,7 @@ description: 查询今日热榜（rebang.today）的实时热榜与历史热点�
 | 5 | `rate_limited` | 被限流：稍等再试，减少调用次数 |
 | 6 | `network_error` / `server_error` | 网络或服务端错误：可重试一次 |
 | 7 | `upgrade_required` | 版本过低：请用户运行 `rebang update` |
+| 8 | `summary_not_found` | 该条目暂无 AI 总结：不是错误，改用标题、`desc` 或原链接，不要编造总结 |
 
 ## 浏览热榜
 
@@ -37,7 +38,7 @@ rebang list --node <NODE_ID> -n 20    # 某个节点的榜单
 rebang list --tab weibo -n 20         # 也可直接用 Tab（可加 --sub-tab）
 ```
 
-`list` 的 JSON：`items[]` 中每项有 `rank`、`title`、`url`、`heat`（可能为空）、`desc`、`published_at`。
+`list` 的 JSON：`items[]` 中每项有 `rank`、`title`、`url`、`heat`（可能为空）、`desc`、`published_at`、`item_key`。
 `content_access.mode` 为 `preview` 表示非会员只能看到前 `preview_limit` 条。
 
 不知道 Tab KEY 时，先 `rebang menus`，再 `rebang tabs --menu <id>`。
@@ -51,8 +52,21 @@ rebang search "关键词" --source weibo,zhihu  # 限定来源 Tab KEY（会员�
 rebang search "关键词" --sort latest         # 按时间排序（会员）
 ```
 
-JSON：`total`、`has_more`、`items[]`（`title`、`url`、`snippet`、`source`、`source_name`、`first_seen_at`、`last_seen_at`）。
+JSON：`total`、`has_more`、`items[]`（`title`、`url`、`snippet`、`source`、`source_name`、`item_key`、`first_seen_at`、`last_seen_at`）。
 `--limit` 最大 200。普通用户使用 `--days`（大于 1）、`--source`、`--sort latest` 会返回退出码 4。
+
+## AI 总结
+
+部分条目有 AI 生成的总结（需登录）。先从 `list` 或 `search` 的 JSON 中取 `item_key`，再查询：
+
+```bash
+rebang list --tab zhihu -n 10 -o json          # 取 items[].item_key
+rebang summary <item_key> -o json              # 单条的 AI 总结
+```
+
+JSON：`summary_short`（一句话总结）与 `detail`。`detail` 中的分区都可能缺失：`points`（要点，字符串数组）、`timeline`（经过，`[{time, text}]`）、`viewpoints`（观点，`[{stance, text, by, quote}]`）、`reactions`（网友怎么看，`{mood, voices: [{by, text, quote}]}`）；不认识的分区忽略。文本中的 `**…**` 是强调标记。
+
+没有总结时退出码为 8，这不是错误，不要重试。总结是 AI 根据原文生成的，引用时说明来源并附原链接；需要准确细节时以原文为准。只对用户关心的少数条目调用，不要对整页逐条查询。
 
 做话题研究、需要多次搜索并汇总时，按 [references/research.md](references/research.md) 的流程进行。
 

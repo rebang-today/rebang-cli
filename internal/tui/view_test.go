@@ -123,7 +123,7 @@ func TestTinyWindowsDoNotPanic(t *testing.T) {
 				}
 			}
 			check("初始")
-			for _, k := range []string{"down", "right", "2", "tab", "down", "esc", "0", "?", "?"} {
+			for _, k := range []string{"down", "right", "2", "tab", "down", "esc", "0", "?", "?", "1", " ", "G", "j", "k", "g", "?", " ", "p", "p"} {
 				key(t, m, k)
 				check(k)
 			}

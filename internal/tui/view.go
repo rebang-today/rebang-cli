@@ -63,7 +63,7 @@ func (m *model) bodyHeight() int {
 
 // listHeight 是右栏列表可见的行数（去掉标题行与子榜单条）。
 func (m *model) listHeight() int {
-	h := m.bodyHeight() - m.rightHead()
+	h := m.bodyHeight() - m.rightHead() - m.previewHeight()
 	if h < 1 {
 		h = 1
 	}
@@ -156,7 +156,12 @@ func (m *model) View() string {
 	var b strings.Builder
 	b.WriteString(m.headerLine())
 	b.WriteByte('\n')
-	body := m.bodyLines()
+	var body []string
+	if m.det != nil {
+		body = m.detailLines(m.width, m.bodyHeight())
+	} else {
+		body = m.bodyLines()
+	}
 	for _, l := range body {
 		b.WriteString(l)
 		b.WriteByte('\n')
@@ -393,7 +398,9 @@ func (m *model) rightLines(w, h int) []string {
 	if m.hasStrip() {
 		out = append(out, m.stripRow(w))
 	}
-	return append(out, m.listLines(w, h-len(out))...)
+	pv := m.previewLines(w)
+	out = append(out, m.listLines(w, h-len(out)-len(pv))...)
+	return append(out, pv...)
 }
 
 func (m *model) titleRow(w int) string {
@@ -578,13 +585,23 @@ func (m *model) listLines(w, h int) []string {
 		short := runewidth.Truncate(it.title, titleW, "…")
 		title := pad(short, titleW)
 		sel := i == m.listCur
+		// 排名与标题之间的第二个空格：有 AI 总结时显示标记，不改变列宽。
+		mark, hasMark := " ", m.hasInsight(it)
+		if hasMark {
+			mark = insightMark
+		}
 		var line string
 		if sel && focused {
-			plain := rank + "  " + title
+			rest := title
 			if metaW > 0 {
-				plain += " " + meta
+				rest += " " + meta
 			}
-			line = styleSel.Render(pad(plain, w-1))
+			rest = pad(rest, w-1-rankW-2)
+			if hasMark {
+				line = styleSel.Render(rank+" ") + styleSel.Foreground(colorAccent).Render(mark) + styleSel.Render(rest)
+			} else {
+				line = styleSel.Render(rank + "  " + rest)
+			}
 		} else {
 			rs := styleRank
 			if i < 3 && m.searchQ == "" {
@@ -598,7 +615,10 @@ func (m *model) listLines(w, h int) []string {
 				ts = styleHoverText
 			}
 			// 只给文字本身上样式，避免下划线延伸到行尾空白。
-			line = rs.Render(rank) + "  " + ts.Render(short) + spaces(titleW-runewidth.StringWidth(short))
+			if hasMark {
+				mark = styleMarker.Render(mark)
+			}
+			line = rs.Render(rank) + " " + mark + ts.Render(short) + spaces(titleW-runewidth.StringWidth(short))
 			used := rankW + 2 + titleW
 			if metaW > 0 {
 				ms := styleDim
@@ -632,18 +652,23 @@ func barHint(key, label string) string {
 type hint struct{ key, label string }
 
 func (m *model) hints() []hint {
+	if m.det != nil {
+		return detailHints()
+	}
 	sub := m.hasStrip()
 	var hs []hint
 	switch {
 	case m.searchQ != "":
-		hs = []hint{{"↵", "打开"}, {"esc", "返回榜单"}, {"y", "复制"}, {"/", "搜索"}}
+		hs = []hint{{"↵", "打开"}, {"空格", "详情"}, {"esc", "返回榜单"}, {"y", "复制"}, {"/", "搜索"}}
 		if !m.wide() {
-			hs = append(hs[:2], append([]hint{{"tab", "来源"}}, hs[2:]...)...)
+			hs = append(hs[:3], append([]hint{{"tab", "来源"}}, hs[3:]...)...)
+		} else {
+			hs = append(hs, hint{"p", "预览"})
 		}
 	case m.picking():
 		hs = []hint{{"↑↓", "选择"}, {"↵", "切换"}, {"esc", "返回榜单"}, {m.menuKeys(), "分类"}}
 	case !m.wide():
-		hs = []hint{{"tab", "来源"}, {"↵", "打开"}}
+		hs = []hint{{"tab", "来源"}, {"↵", "打开"}, {"空格", "详情"}}
 		if sub {
 			hs = append(hs, hint{"←→", "切换"})
 		}
@@ -653,13 +678,13 @@ func (m *model) hints() []hint {
 		if sub {
 			hs = append(hs, hint{"←→", "切换"})
 		}
-		hs = append(hs, hint{"↵", "进入列表"}, hint{m.menuKeys(), "分类"}, hint{"/", "搜索"})
+		hs = append(hs, hint{"↵", "进入列表"}, hint{m.menuKeys(), "分类"}, hint{"/", "搜索"}, hint{"p", "预览"})
 	default:
-		hs = []hint{{"↵", "打开"}}
+		hs = []hint{{"↵", "打开"}, {"空格", "详情"}}
 		if sub {
 			hs = append(hs, hint{"←→", "切换"})
 		}
-		hs = append(hs, hint{"esc", "返回"}, hint{"y", "复制"}, hint{"/", "搜索"})
+		hs = append(hs, hint{"esc", "返回"}, hint{"y", "复制"}, hint{"/", "搜索"}, hint{"p", "预览"})
 	}
 	return append(hs, hint{"?", "帮助"}, hint{"q", "退出"})
 }
@@ -779,8 +804,8 @@ var helpKeys = []struct {
 	group string
 	keys  []hint
 }{
-	{"浏览", []hint{{"↑ ↓  j k", "在当前栏上下移动，左栏停下后自动加载"}, {"← →  h l", "切换子榜单"}, {"0-9  [ ]", "切换分类，0 为订阅"}, {"tab", "切换左右栏；单栏时打开来源列表"}, {"g G 空格", "开头、结尾、翻页"}}},
-	{"操作", []hint{{"回车", "左栏进入列表；列表中在浏览器打开；来源列表中切换来源"}, {"esc", "列表返回左栏；来源列表返回榜单；搜索时返回榜单"}, {"/", "搜索"}, {"y", "复制链接"}, {"r", "刷新"}, {"?  q", "帮助、退出"}}},
+	{"浏览", []hint{{"↑ ↓  j k", "在当前栏上下移动，左栏停下后自动加载"}, {"← →  h l", "切换子榜单"}, {"0-9  [ ]", "切换分类，0 为订阅"}, {"tab", "切换左右栏；单栏时打开来源列表"}, {"g G  PgUp PgDn", "开头、结尾、翻页"}}},
+	{"操作", []hint{{"回车", "左栏进入列表；列表中在浏览器打开；来源列表中切换来源"}, {"空格", "详情与 AI 总结（" + insightMark + " 表示有总结，需登录）"}, {"p", "打开或关闭底部预览（双栏且至少 24 行时显示）"}, {"esc", "列表返回左栏；来源列表返回榜单；搜索时返回榜单"}, {"/  y", "搜索、复制链接"}, {"r", "刷新"}, {"?  q", "帮助、退出"}}},
 }
 
 func (m *model) helpBody(w, h int) []string {
@@ -810,6 +835,10 @@ func (m *model) helpBody(w, h int) []string {
 			}
 		}
 		lines = compact
+		if len(lines) > h {
+			// 仍然放不下时去掉标题“快捷键”。
+			lines = lines[1:]
+		}
 	}
 	// 整体左对齐，块居中。
 	bw := 0

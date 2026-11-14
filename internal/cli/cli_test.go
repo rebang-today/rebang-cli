@@ -105,6 +105,17 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		ok(map[string]any{"tab_info": []map[string]any{}})
+	case "/v1/item/insight":
+		if !authed {
+			fail(401, 1004, "unauthorized")
+			return
+		}
+		switch r.URL.Query().Get("item_key") {
+		case summaryKey:
+			w.Write([]byte(`{"code":200,"msg":"ok","data":{"summary_short":"一句**话**总结","detail":{"quotes":["旧"],"reactions":{"mood":"多数支持","voices":[{"by":"网友甲","text":"不错","quote":"原话"}]},"points":["要点**一**"]},"keywords":["k"],"debug":{"model":"m"}}}`))
+		default:
+			fail(404, 1003, "record not found")
+		}
 	case "/v1/cli/auth/device/code":
 		var body map[string]string
 		json.NewDecoder(r.Body).Decode(&body)

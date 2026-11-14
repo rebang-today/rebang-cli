@@ -17,6 +17,10 @@ type Source interface {
 	List(ctx context.Context, t listTarget, limit int) (*cli.ListResult, error)
 	Search(ctx context.Context, q string, limit int) (*cli.SearchResult, error)
 	Account(ctx context.Context) (*cli.AccountView, error)
+	// InsightShorts 批量查询一句话总结（需登录），返回有总结的 item_key。
+	InsightShorts(ctx context.Context, keys []string) (map[string]string, error)
+	// Insight 查询单条完整 AI 总结（需登录），没有总结时返回 errNoSummary。
+	Insight(ctx context.Context, key string) (*api.Insight, error)
 	// CheckUpdate 返回可用的新版本，没有时返回 nil。
 	CheckUpdate(ctx context.Context) (*update.Manifest, error)
 	// Install 安装新版本。
@@ -79,6 +83,29 @@ func (s *apiSource) Account(ctx context.Context) (*cli.AccountView, error) {
 	}
 	v := cli.ToAccountView(acct, s.now(), s.web)
 	return &v, nil
+}
+
+func (s *apiSource) InsightShorts(ctx context.Context, keys []string) (map[string]string, error) {
+	res, err := s.client.InsightsBatch(ctx, keys)
+	if err != nil {
+		return nil, api.MapError(err)
+	}
+	out := make(map[string]string, len(res))
+	for k, v := range res {
+		out[k] = v.SummaryShort
+	}
+	return out, nil
+}
+
+func (s *apiSource) Insight(ctx context.Context, key string) (*api.Insight, error) {
+	in, err := s.client.Insight(ctx, key)
+	if api.IsNotFound(err) {
+		return nil, errNoSummary
+	}
+	if err != nil {
+		return nil, api.MapError(err)
+	}
+	return in, nil
 }
 
 func (s *apiSource) CheckUpdate(ctx context.Context) (*update.Manifest, error) {

@@ -46,6 +46,7 @@ $ rebang --help
   nodes        列出可直接查看的榜单节点
   list         查看榜单
   search       搜索热榜条目
+  summary      查看条目的 AI 总结（需登录）
   following    我的关注（需登录）
   open         用浏览器打开条目
 

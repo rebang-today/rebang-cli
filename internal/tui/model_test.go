@@ -32,6 +32,13 @@ type fakeSource struct {
 	acctErr   error
 	manifest  *update.Manifest
 	installed string
+	// AI 总结：shorts 为批量结果，insights 为详情，缺失表示暂无总结。
+	shorts       map[string]string
+	shortsErr    error
+	shortsCalls  [][]string
+	insights     map[string]*api.Insight
+	insightErr   error
+	insightCalls []string
 }
 
 func (f *fakeSource) Menus(context.Context) ([]api.Menu, error) { return f.menus, nil }
@@ -59,6 +66,29 @@ func (f *fakeSource) Search(_ context.Context, q string, _ int) (*cli.SearchResu
 	return &cli.SearchResult{Query: q, Items: f.search}, nil
 }
 func (f *fakeSource) Account(context.Context) (*cli.AccountView, error) { return f.account, f.acctErr }
+func (f *fakeSource) InsightShorts(_ context.Context, keys []string) (map[string]string, error) {
+	f.shortsCalls = append(f.shortsCalls, keys)
+	if f.shortsErr != nil {
+		return nil, f.shortsErr
+	}
+	out := map[string]string{}
+	for _, k := range keys {
+		if v, ok := f.shorts[k]; ok {
+			out[k] = v
+		}
+	}
+	return out, nil
+}
+func (f *fakeSource) Insight(_ context.Context, key string) (*api.Insight, error) {
+	f.insightCalls = append(f.insightCalls, key)
+	if f.insightErr != nil {
+		return nil, f.insightErr
+	}
+	if in, ok := f.insights[key]; ok {
+		return in, nil
+	}
+	return nil, errNoSummary
+}
 func (f *fakeSource) CheckUpdate(context.Context) (*update.Manifest, error) {
 	return f.manifest, nil
 }
@@ -78,7 +108,7 @@ func newFake() *fakeSource {
 			2: {nodes: []api.Node{{NodeID: "n1", Name: "少数派"}}},
 		},
 		lists: map[string][]cli.ListItem{
-			"|zhihu|":     {{Title: "知乎第一", URL: "https://example.com/z1", Heat: "100万"}, {Title: "知乎第二", URL: "https://example.com/z2"}},
+			"|zhihu|":     {{Title: "知乎第一", URL: "https://example.com/z1", Heat: "100万", ItemKey: "kz1"}, {Title: "知乎第二", URL: "https://example.com/z2", ItemKey: "kz2"}},
 			"|weibo|hot":  {{Title: "微博热搜", URL: "https://example.com/w1"}},
 			"n1||":        {{Title: "少数派文章", URL: "https://example.com/s1"}},
 			"|weibo|news": {{Title: "微博要闻", URL: "https://example.com/w2"}},

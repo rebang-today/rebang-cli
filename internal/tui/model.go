@@ -55,6 +55,8 @@ const (
 // row 是右栏的一行。
 type row struct {
 	title, url, mobile, meta, desc string
+	// key 是条目的 item_key，用于查询 AI 总结；src、when、heat 用于预览与详情的来源、时间、热度。
+	key, src, when, heat string
 }
 
 type model struct {
@@ -115,6 +117,14 @@ type model struct {
 	lastClickAt  time.Time
 	lastClickIdx int
 	lastClickPan focus
+
+	// AI 总结（D-26）：shorts 是批量查到的一句话总结，shortSeen 记录已查询过的 item_key（含没有总结的）；
+	// insights 是详情页按 item_key 缓存的完整总结；previewOff 表示关闭了双栏底部的预览；det 为打开的详情页。
+	shorts     map[string]string
+	shortSeen  map[string]bool
+	insights   map[string]*insightEntry
+	previewOff bool
+	det        *detailState
 
 	// pointerOn 表示已把鼠标指针切换为小手。
 	pointerOn bool
@@ -196,6 +206,10 @@ func newModel(opt Options) *model {
 	}
 	return &model{
 		opt:         opt,
+		shorts:      map[string]string{},
+		shortSeen:   map[string]bool{},
+		insights:    map[string]*insightEntry{},
+		previewOff:  mem.Preview != nil && !*mem.Preview,
 		data:        map[int64]*menuData{},
 		menuLoading: map[int64]bool{},
 		menuErrs:    map[int64]string{},
@@ -362,7 +376,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // busy 表示有正在进行的加载，需要转圈动画。
 func (m *model) busy() bool {
-	if m.loading || (len(m.menus) == 0 && m.menuErr == "") {
+	if m.loading || m.detailLoading() || (len(m.menus) == 0 && m.menuErr == "") {
 		return true
 	}
 	if mn, ok := m.curMenu(); ok && m.menuLoading[mn.ID] {
@@ -389,6 +403,7 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.srcCur = m.pickFrom
 		}
 		m.clamp()
+		m.clampDetail()
 		return m, nil
 	case tea.KeyMsg:
 		return m, m.onKey(msg)
@@ -465,7 +480,7 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.listErr = ""
 		m.setList(msg.res)
-		return m, m.wechatFallback()
+		return m, tea.Batch(m.wechatFallback(), m.loadShorts())
 	case searchMsg:
 		if msg.seq != m.listSeq {
 			return m, nil
@@ -479,7 +494,7 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.listErr = ""
 		m.setSearch(msg.res)
-		return m, nil
+		return m, m.loadShorts()
 	case updateMsg:
 		if msg.err != nil || msg.m == nil {
 			return m, nil
@@ -503,6 +518,12 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tickMsg:
 		return m, tea.Batch(m.refresh(), m.tick())
+	case shortsMsg:
+		m.onShorts(msg)
+		return m, nil
+	case insightMsg:
+		m.onInsight(msg)
+		return m, nil
 	}
 	if m.searching {
 		var cmd tea.Cmd
@@ -520,7 +541,8 @@ func (m *model) setList(res *cli.ListResult) {
 		if meta == "" && it.Label != "" {
 			meta = it.Label
 		}
-		m.items = append(m.items, row{title: ui.CleanText(it.Title), url: it.URL, mobile: it.MobileURL, meta: ui.CleanText(meta), desc: ui.CleanText(it.Desc)})
+		m.items = append(m.items, row{title: ui.CleanText(it.Title), url: it.URL, mobile: it.MobileURL, meta: ui.CleanText(meta), desc: ui.CleanText(it.Desc),
+			key: it.ItemKey, src: m.listSourceName(), when: shortTime(it.PublishedAt, m.opt.Now()), heat: ui.CleanText(it.Heat)})
 	}
 	m.access = res.ContentAccess
 	m.listNotice = ""
@@ -542,7 +564,8 @@ func (m *model) setSearch(res *cli.SearchResult) {
 		if src == "" {
 			src = it.Source
 		}
-		m.items = append(m.items, row{title: ui.CleanText(it.Title), url: it.URL, mobile: it.MobileURL, meta: ui.CleanText(src), desc: ui.CleanText(it.Snippet)})
+		m.items = append(m.items, row{title: ui.CleanText(it.Title), url: it.URL, mobile: it.MobileURL, meta: ui.CleanText(src), desc: ui.CleanText(it.Snippet),
+			key: it.ItemKey, src: ui.CleanText(src), when: shortTime(it.LastSeen, m.opt.Now())})
 	}
 	if len(m.items) == 0 {
 		m.listNotice = "没有找到相关内容"
@@ -706,6 +729,9 @@ func (m *model) posSignature() string {
 	}
 	mn, _ := m.curMenu()
 	sig := itoa(mn.ID) + "|" + itoa(int64(len(m.srcMem))) + "|" + itoa(int64(len(m.subMem)))
+	if m.previewOff {
+		sig += "|nopreview"
+	}
 	if k, ok := m.srcMem[mn.ID]; ok {
 		sig += "|" + k
 		if sub, ok := m.subMem[itoa(mn.ID)+"/"+k]; ok {
@@ -887,6 +913,9 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 	if key == "ctrl+c" {
 		return tea.Quit
 	}
+	if m.det != nil {
+		return m.detailKey(key)
+	}
 	if m.searching {
 		switch key {
 		case "esc":
@@ -995,8 +1024,12 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 		return m.move(1)
 	case "pgup", "ctrl+b":
 		return m.move(-m.paneHeight())
-	case "pgdown", "ctrl+f", " ":
+	case "pgdown", "ctrl+f":
 		return m.move(m.paneHeight())
+	case " ", "space":
+		return m.openDetail()
+	case "p":
+		m.togglePreview()
 	case "home", "g":
 		return m.move(-1 << 20)
 	case "end", "G":
@@ -1101,15 +1134,16 @@ func (m *model) selected() (row, bool) {
 }
 
 func (m *model) openSelected() tea.Cmd {
-	it, ok := m.selected()
-	if !ok || it.url == "" {
+	it, _ := m.selected()
+	return m.openURL(it.url)
+}
+
+func (m *model) openURL(u string) tea.Cmd {
+	if u == "" || m.opt.Open == nil {
 		return nil
 	}
-	if m.opt.Open == nil {
-		return nil
-	}
-	if err := m.opt.Open(it.url); err != nil {
-		m.flash("无法打开浏览器："+it.url, true)
+	if err := m.opt.Open(u); err != nil {
+		m.flash("无法打开浏览器："+u, true)
 		return nil
 	}
 	m.flash("已在浏览器中打开", false)
@@ -1117,12 +1151,16 @@ func (m *model) openSelected() tea.Cmd {
 }
 
 func (m *model) copySelected() tea.Cmd {
-	it, ok := m.selected()
-	if !ok || it.url == "" {
+	it, _ := m.selected()
+	return m.copyURL(it.url)
+}
+
+func (m *model) copyURL(u string) tea.Cmd {
+	if u == "" {
 		return nil
 	}
-	if m.opt.Copy == nil || m.opt.Copy(it.url) != nil {
-		m.flash("无法访问剪贴板，链接："+it.url, true)
+	if m.opt.Copy == nil || m.opt.Copy(u) != nil {
+		m.flash("无法访问剪贴板，链接："+u, true)
 		return nil
 	}
 	m.flash("已复制链接", false)
@@ -1177,7 +1215,7 @@ func (m *model) hitTest(x, y int) hit {
 		return hit{pane: pane}
 	}
 	idx := m.listOff + y - 1 - m.rightHead()
-	if y-1 >= m.rightHead() && idx < len(m.items) {
+	if y-1 >= m.rightHead() && y-1-m.rightHead() < m.listHeight() && idx < len(m.items) {
 		return hit{what: hitItem, idx: idx, pane: pane}
 	}
 	return hit{pane: pane}
@@ -1186,6 +1224,18 @@ func (m *model) hitTest(x, y int) hit {
 func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 	if m.tooSmall() || m.help || m.searching {
 		m.setPointer(false)
+		return nil
+	}
+	if m.det != nil {
+		m.setPointer(false)
+		if ev.Action == tea.MouseActionPress && (ev.Button == tea.MouseButtonWheelUp || ev.Button == tea.MouseButtonWheelDown) {
+			d := 3
+			if ev.Button == tea.MouseButtonWheelUp {
+				d = -3
+			}
+			m.det.off += d
+			m.clampDetail()
+		}
 		return nil
 	}
 	h := m.hitTest(ev.X, ev.Y)
