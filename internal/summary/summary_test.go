@@ -113,3 +113,16 @@ func TestWrapByDisplayWidth(t *testing.T) {
 		t.Fatal("宽度 0 应无输出")
 	}
 }
+
+func TestWrapKinsoku(t *testing.T) {
+	for _, w := range []int{4, 6, 8, 10, 12} {
+		for _, l := range Plain([]Line{{Kind: Para, Text: "今天天气很好，所谓AI、高中生；结论：完毕。"}}, w) {
+			if l != "" && noLineStart(string([]rune(l)[0])) {
+				t.Fatalf("宽 %d 时行首为标点：%q", w, l)
+			}
+			if runewidth.StringWidth(l) > w {
+				t.Fatalf("宽 %d 超出：%q", w, l)
+			}
+		}
+	}
+}

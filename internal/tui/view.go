@@ -137,14 +137,8 @@ func (m *model) rightX() int {
 	return m.leftWidth() + 1
 }
 
-// rightWidth 是榜单栏的宽度；三栏布局时不含预览栏与它前面的分隔线。
-func (m *model) rightWidth() int {
-	w := m.width - m.rightX()
-	if sw := m.sideWidth(); sw > 0 {
-		w -= sw + 1
-	}
-	return w
-}
+// rightWidth 是榜单栏的宽度。
+func (m *model) rightWidth() int { return m.width - m.rightX() }
 
 // paneAt 返回横坐标所在的栏。
 func (m *model) paneAt(x int) (focus, bool) {
@@ -156,9 +150,6 @@ func (m *model) paneAt(x int) (focus, bool) {
 	case x < lw:
 		return focusTree, true
 	case x == lw:
-		return 0, false
-	case x >= m.rightX()+m.rightWidth():
-		// 三栏布局的预览栏不参与切栏与点击。
 		return 0, false
 	}
 	return focusList, true
@@ -352,16 +343,9 @@ func (m *model) bodyLines() []string {
 	left := m.sourceLines(lw, h)
 	right := m.rightLines(m.rightWidth(), h)
 	sep := styleSepColor.Render("│")
-	var side []string
-	if sw := m.sideWidth(); sw > 0 {
-		side = m.previewBody(sw, h)
-	}
 	out := make([]string, max(h, 0))
 	for i := range out {
 		out[i] = left[i] + sep + right[i]
-		if side != nil {
-			out[i] += sep + side[i]
-		}
 	}
 	return out
 }
@@ -552,7 +536,11 @@ func (m *model) emptyState(w int) []string {
 		}
 		return lines
 	case m.target.key() != "||" || m.searchQ != "":
-		return []string{styleDim.Render("暂无内容"), "", keyHint("↓", "换一个榜单") + "   " + keyHint("r", "刷新")}
+		k := "↓"
+		if m.focus == focusList {
+			k = "←" // 榜单焦点下 ↓ 只移动光标，先回左栏才能换来源
+		}
+		return []string{styleDim.Render("暂无内容"), "", keyHint(k, "换一个榜单") + "   " + keyHint("r", "刷新")}
 	case m.menuErr != "":
 		return []string{styleDim.Render(m.menuErr)}
 	}
@@ -688,38 +676,73 @@ func barHint(key, label string) string {
 	return barText(styleKey, key) + barText(styleDim, " "+label)
 }
 
-type hint struct{ key, label string }
+// hint 是一个按键提示；prio 越小越先在空间不足时被去掉。
+type hint struct {
+	key, label string
+	prio       int
+}
 
-// hints 返回底部的按键提示（不含始终保留的“? 帮助”“q 退出”），放不下时从后往前去掉。
+// 提示的重要性：切换来源的方向键最后才去掉（仅次于“? 帮助”“q 退出”）。
+const (
+	prioLow  = iota // ↵ 打开、分类、/ 搜索
+	prioMid         // 移动、子榜、翻预览、只看未读、返回
+	prioHigh        // ← 来源、→ 进入榜单、整栏预览的返回
+)
+
+// hints 返回底部的按键提示（不含始终保留的“? 帮助”“q 退出”）。
 func (m *model) hints() []hint {
-	sub := hint{"tab", "子榜"}
-	if len(m.curSubs()) <= 1 {
-		sub = hint{}
-	}
 	var hs []hint
-	if m.focus == focusTree {
-		hs = []hint{{"↑↓", "选来源"}, {"→", "进入榜单"}, sub, {m.menuKeys(), "分类"}, {"/", "搜索"}}
-	} else {
-		hs = []hint{{"↑↓", "移动"}, {"←", "来源"}, sub, {"↵", "打开"}}
+	sub := len(m.curSubs()) > 1
+	page := m.previewShown() && m.previewOverflows()
+	switch {
+	case m.previewFull():
+		hs = append(hs, hint{"↑↓", "换条", prioLow})
+		if page {
+			hs = append(hs, hint{"空格", "翻页", prioMid})
+		}
+		hs = append(hs, hint{"p/esc", "返回", prioHigh})
+	case m.focus == focusTree:
+		hs = append(hs, hint{"↑↓", "选来源", prioMid}, hint{"→", "进入榜单", prioHigh})
+		if sub {
+			hs = append(hs, hint{"tab", "子榜", prioMid})
+		}
+		hs = append(hs, hint{m.menuKeys(), "分类", prioLow}, hint{"/", "搜索", prioLow})
+	default:
+		hs = append(hs, hint{"↑↓", "移动", prioMid}, hint{"←", "来源", prioHigh})
+		if sub {
+			hs = append(hs, hint{"tab", "子榜", prioMid})
+		}
+		hs = append(hs, hint{"↵", "打开", prioLow})
 		if m.inMonitor() {
 			hs = append(hs, m.unreadHint())
 		}
 		if m.searchQ != "" {
-			hs = append(hs, hint{"esc", "返回榜单"})
+			hs = append(hs, hint{"esc", "返回榜单", prioMid})
 		}
-		hs = append(hs, hint{"空格", "翻预览"}, hint{m.menuKeys(), "分类"}, hint{"/", "搜索"})
+		if page {
+			hs = append(hs, hint{"空格", "翻预览", prioMid})
+		}
+		hs = append(hs, hint{m.menuKeys(), "分类", prioLow}, hint{"/", "搜索", prioLow})
 	}
-	out := hs[:0]
-	for _, h := range hs {
-		if h.key != "" {
-			out = append(out, h)
+	return hs
+}
+
+// dropHint 去掉一个最不重要的提示（同等重要时去掉靠后的）。
+func dropHint(hs []hint) []hint {
+	at := -1
+	for i, h := range hs {
+		if at < 0 || h.prio <= hs[at].prio {
+			at = i
 		}
 	}
-	return out
+	if at < 0 {
+		return hs
+	}
+	return append(hs[:at:at], hs[at+1:]...)
 }
 
 // fixedHints 始终显示在最右侧，不因宽度不足被去掉。
-var fixedHints = []hint{{"?", "帮助"}, {"q", "退出"}}
+var fixedHints = []hint{{"?", "帮助", prioHigh}, {"q", "退出", prioHigh}}
 
 // inFollowMenu 表示当前在“订阅”菜单。
 func (m *model) inFollowMenu() bool {
@@ -739,29 +762,67 @@ func (m *model) menuKeys() string {
 	return "0-" + itoa(int64(n))
 }
 
+// accountTexts 返回账号状态从完整到最短的几种写法，供状态栏按宽度挑选：
+// 去掉到期时间，再截短邮箱，最后只留“● 会员”或“● 已登录”。
+func (m *model) accountTexts() ([]string, lipgloss.Style) {
+	switch {
+	case m.previewFull():
+		// 整栏预览是阅读模式，单栏放不下，不显示账号状态，把位置留给翻页提示。
+		return []string{""}, styleDim
+	case m.expired:
+		return []string{"● 登录已失效，退出后运行 rebang auth login", "● 登录已失效"}, styleError
+	case !m.loggedIn:
+		return []string{"○ 未登录"}, styleDim
+	case m.account == nil:
+		return []string{"● 已登录"}, styleOK
+	}
+	short := "已登录"
+	if m.account.ID != 0 {
+		short = "非会员"
+		if m.account.IsMember {
+			short = "会员"
+		}
+	}
+	email := m.account.Email
+	if email == "" {
+		if mt := m.account.MemberText(); mt != "" {
+			return []string{"● 已登录 · " + mt, "● " + short}, styleOK
+		}
+		return []string{"● " + short}, styleOK
+	}
+	var out []string
+	if mt := m.account.MemberText(); mt != "" && mt != short {
+		out = append(out, "● "+email+" · "+mt)
+	}
+	tail := ""
+	if short != "已登录" {
+		tail = " · " + short
+	}
+	out = append(out, "● "+email+tail)
+	// 邮箱逐步截短，至少保留 6 列。
+	for w := runewidth.StringWidth(email) - 1; w >= 6; w-- {
+		out = append(out, "● "+runewidth.Truncate(email, w, "…")+tail)
+	}
+	return append(out, "● "+short), styleOK
+}
+
+// lineOverhead 是状态栏除账号、消息与提示外的空白：行首与行尾各 1 列，账号后 2 列，提示前 2 列（前面什么都没有时省略）。
+func lineOverhead(left string, mid int) int {
+	n := 2
+	if left != "" {
+		n += 2
+	}
+	if left != "" || mid > 0 {
+		n += 2
+	}
+	return n
+}
+
 func (m *model) statusLine() string {
 	if m.searching {
 		return pad(m.input.View(), m.width)
 	}
-	var left string
-	var leftStyle lipgloss.Style
-	switch {
-	case m.expired:
-		left, leftStyle = "● 登录已失效，退出后运行 rebang auth login", styleError
-	case !m.loggedIn:
-		left, leftStyle = "○ 未登录", styleDim
-	case m.account == nil:
-		left, leftStyle = "● 已登录", styleOK
-	default:
-		name := m.account.Email
-		if name == "" {
-			name = "已登录"
-		}
-		left, leftStyle = "● "+name, styleOK
-		if mt := m.account.MemberText(); mt != "" {
-			left += " · " + mt
-		}
-	}
+	lefts, leftStyle := m.accountTexts()
 	mid := ""
 	midStyle := styleDim
 	switch {
@@ -773,7 +834,6 @@ func (m *model) statusLine() string {
 	case m.newVer != "":
 		mid, midStyle = "↑ 新版本 "+m.newVer+"，运行 rebang update 升级", styleHeader
 	}
-	// 按宽度从后往前丢弃提示，保证状态与消息可见；“? 帮助”“q 退出”始终保留。
 	hs := m.hints()
 	render := func(hs []hint) (string, int) {
 		parts := make([]string, len(hs))
@@ -792,57 +852,59 @@ func (m *model) statusLine() string {
 		}
 		return strings.Join(parts, barText(styleBar, "  ")), plain
 	}
-	lw := runewidth.StringWidth(left)
-	if lw > m.width-2 {
-		left = runewidth.Truncate(left, m.width-2, "…")
-		lw = runewidth.StringWidth(left)
-	}
-	{
-		// 必须留出第一个提示与“? 帮助”“q 退出”，账号信息让位。
-		_, w1 := render(hs[:min(1, len(hs))])
-		if room := m.width - w1 - 6; lw > room && room > 0 {
-			left = runewidth.Truncate(left, room, "…")
-			lw = runewidth.StringWidth(left)
+	// 有消息时至少给它留 24 列（或消息本身的宽度）。
+	minMid := min(runewidth.StringWidth(mid), 24)
+	// 空间不够时先逐级缩短账号状态，再按重要性去掉提示；“? 帮助”“q 退出”始终保留。
+	fit := func(hw int) (string, bool) {
+		for _, l := range lefts {
+			if lineOverhead(l, minMid)+hw+runewidth.StringWidth(l)+minMid <= m.width {
+				return l, true
+			}
 		}
+		return "", false
 	}
 	hintStr, hw := render(hs)
-	// 有消息时至少给它留 24 列（或消息本身的宽度），其余空间给按键提示。
-	minMid := runewidth.StringWidth(mid)
-	if minMid > 24 {
-		minMid = 24
-	}
-	for len(hs) > 0 && m.width-lw-hw-6-minMid < 0 {
-		hs = hs[:len(hs)-1]
+	left, ok := fit(hw)
+	for !ok && len(hs) > 0 {
+		hs = dropHint(hs)
 		hintStr, hw = render(hs)
+		left, ok = fit(hw)
 	}
-	if hintStr == "" {
-		hw = -2
+	if !ok {
+		left = lefts[len(lefts)-1]
 	}
-	avail := m.width - lw - hw - 6
-	if avail < 0 {
-		avail = 0
+	if lw := runewidth.StringWidth(left); lw > m.width-2 {
+		left = runewidth.Truncate(left, m.width-2, "…")
 	}
+	lw := runewidth.StringWidth(left)
+	avail := max(m.width-lw-hw-lineOverhead(left, runewidth.StringWidth(mid)), 0)
 	if runewidth.StringWidth(mid) > avail {
 		mid = runewidth.Truncate(mid, avail, "…")
 	}
 	gap := avail - runewidth.StringWidth(mid)
-	sep := ""
-	if hintStr != "" {
-		sep = "  "
+	line := barText(styleBar, " ") + barText(leftStyle, left)
+	if left != "" {
+		line += barText(styleBar, "  ")
 	}
-	line := barText(styleBar, " ") + barText(leftStyle, left) + barText(styleBar, "  ") + barText(midStyle, mid) + barText(styleBar, spaces(gap)+sep) + hintStr
+	line += barText(midStyle, mid) + barText(styleBar, spaces(gap))
+	if left != "" || mid != "" {
+		line += barText(styleBar, "  ")
+	}
+	line += hintStr
 	if w := lipgloss.Width(line); w < m.width {
 		line += barText(styleBar, spaces(m.width-w))
 	}
 	return line
 }
 
+type helpKey struct{ key, label string }
+
 var helpKeys = []struct {
 	group string
-	keys  []hint
+	keys  []helpKey
 }{
-	{"浏览", []hint{{"↑ ↓  j k", "在当前栏上下移动；左栏移动时榜单跟着切换"}, {"←  h", "去左栏选来源（单栏时打开来源列表）"}, {"→  l", "回到榜单（左栏回车同样）"}, {"tab  ⇧tab", "切换子榜单，到头后回到另一端"}, {"0-9  [ ]", "切换分类，0 为订阅"}, {"g G  PgUp PgDn", "开头、结尾、翻页"}}},
-	{"操作", []hint{{"回车", "榜单中在浏览器打开"}, {"空格", "预览向下翻一屏，到底后回到开头"}, {"p", "宽屏开关预览区；单栏切换整栏预览"}, {"u", "内容监控中切换全部、只看未读"}, {"esc", "退出搜索、帮助、搜索结果与整栏预览"}, {"/  y  r", "搜索、复制链接、刷新"}, {"?  q", "帮助、退出"}}},
+	{"浏览", []helpKey{{"↑ ↓  j k", "在当前栏上下移动；左栏移动时榜单跟着切换"}, {"←  h", "去左栏选来源（单栏时打开来源列表）"}, {"→  l", "回到榜单（左栏回车同样）"}, {"tab  ⇧tab", "切换子榜单，到头后回到另一端"}, {"0-9  [ ]", "切换分类，0 为订阅"}, {"g G  PgUp PgDn", "开头、结尾、翻页"}}},
+	{"操作", []helpKey{{"回车", "榜单中在浏览器打开"}, {"空格", "预览向下翻一屏，到底后回到开头"}, {"p", "宽屏开关预览区；单栏切换整栏预览"}, {"u", "内容监控中切换全部、只看未读"}, {"esc", "退出搜索、帮助、搜索结果与整栏预览"}, {"/  y  r", "搜索、复制链接、刷新"}, {"?  q", "帮助、退出"}}},
 }
 
 func (m *model) helpBody(w, h int) []string {
@@ -960,7 +1022,7 @@ func fill(lines []string, w, h int) []string {
 // unreadHint 是内容监控中切换“全部 / 只看未读”的提示。
 func (m *model) unreadHint() hint {
 	if m.mon.unreadOnly {
-		return hint{"u", "看全部"}
+		return hint{"u", "看全部", prioMid}
 	}
-	return hint{"u", "只看未读"}
+	return hint{"u", "只看未读", prioMid}
 }

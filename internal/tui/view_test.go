@@ -72,9 +72,9 @@ func TestViewGolden(t *testing.T) {
 	key(t, m, "l")
 	section("下方预览 100x26", snapshot(m, 100, 26))
 	waitInsight(t, m)
-	section("三栏·完整总结 140x24", snapshot(m, 140, 24))
+	section("下方预览·完整总结 140x30", snapshot(m, 140, 30))
 	key(t, m, " ")
-	section("三栏·翻页 140x24", snapshot(m, 140, 24))
+	section("下方预览·翻页 140x30", snapshot(m, 140, 30))
 	section("单栏·整栏预览 48x16", func() string {
 		m.Update(tea.WindowSizeMsg{Width: 48, Height: 16})
 		key(t, m, "p")

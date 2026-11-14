@@ -163,7 +163,7 @@ func TestPreviewBold(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.ANSI256)
 	defer lipgloss.SetColorProfile(old)
 	m := start(t, insightFake(), Options{LoggedIn: true, Now: fixedNow})
-	m.Update(tea.WindowSizeMsg{Width: 140, Height: 60})
+	m.Update(tea.WindowSizeMsg{Width: 140, Height: 90})
 	key(t, m, "l")
 	waitInsight(t, m)
 	v := m.View()
@@ -308,55 +308,80 @@ func TestPreviewPaging(t *testing.T) {
 	}
 }
 
+// TestPreviewMoreRow：放不下时最后一行专门放“↓ 更多”，不盖住正文；翻页不漏行。
+func TestPreviewMoreRow(t *testing.T) {
+	for _, sz := range [][2]int{{48, 16}, {100, 30}} {
+		m := start(t, insightFake(), Options{Now: fixedNow})
+		m.Update(tea.WindowSizeMsg{Width: sz[0], Height: sz[1]})
+		if sz[0] < 56 {
+			key(t, m, "p")
+		} else {
+			key(t, m, "l")
+		}
+		waitInsight(t, m)
+		w, h := m.previewBox()
+		all := m.previewContent(w)
+		var seen []string
+		for i := 0; i < 20; i++ {
+			body := m.previewBody(w+2, h)
+			last := strings.TrimSpace(golden.StripANSI(body[h-1]))
+			more := m.pvOff+h-1 < len(all)
+			if more && last != "↓ 更多" {
+				t.Fatalf("%v 最后一行应只有“↓ 更多”：%q", sz, last)
+			}
+			for _, l := range body[:h-1] {
+				seen = append(seen, strings.TrimSpace(golden.StripANSI(l)))
+			}
+			if !more {
+				seen = append(seen, strings.TrimSpace(golden.StripANSI(body[h-1])))
+			}
+			key(t, m, " ")
+			if m.pvOff == 0 {
+				break
+			}
+		}
+		joined := strings.Join(seen, "\n")
+		for _, l := range all {
+			if p := strings.TrimSpace(golden.StripANSI(l)); p != "" && !strings.Contains(joined, p) {
+				t.Fatalf("%v 翻页漏掉了 %q", sz, p)
+			}
+		}
+	}
+}
+
+func TestPreviewPlaceholderDesc(t *testing.T) {
+	f := insightFake()
+	f.lists["|zhihu|"][1].Desc = " [图片]  [图片] "
+	f.lists["|zhihu|"][2].Desc = "[图片] 正文"
+	m := start(t, f, Options{Now: fixedNow})
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	key(t, m, "l", "j")
+	if pt := previewText(m); strings.Contains(pt, "简介") || !strings.Contains(pt, "暂无摘要") {
+		t.Fatalf("只有占位文字时不显示简介\n%s", pt)
+	}
+	key(t, m, "j")
+	if pt := previewText(m); !strings.Contains(pt, "简介") {
+		t.Fatalf("有正文时显示简介\n%s", pt)
+	}
+}
+
 func TestPreviewLayouts(t *testing.T) {
 	m := start(t, insightFake(), Options{LoggedIn: true, Now: fixedNow})
 	key(t, m, "l")
-	// 129 列：预览在榜单下方。
-	m.Update(tea.WindowSizeMsg{Width: 129, Height: 30})
-	if m.previewSide() || m.previewHeight() == 0 || strings.Count(lineWith(plainView(m), "知乎第一"), "│") != 1 {
-		t.Fatalf("129 列应为下方预览\n%s", plainView(m))
-	}
-	// 130 列：三栏，预览约占右侧 40%，至少 36 列。
-	m.Update(tea.WindowSizeMsg{Width: 130, Height: 30})
-	sw := m.sideWidth()
-	if !m.previewSide() || m.previewHeight() != 0 || sw < sidePaneMin || sw != max(sidePaneMin, (130-m.leftWidth()-1)*2/5) {
-		t.Fatalf("130 列应为三栏：side=%d", sw)
-	}
-	if m.leftWidth()+1+m.rightWidth()+1+sw != 130 {
-		t.Fatal("三栏宽度应正好铺满")
-	}
-	v := plainView(m)
-	if l := lineWith(v, "知乎第一"); strings.Count(l, "│") != 2 {
-		t.Fatalf("三栏应有两条分隔线\n%s", v)
-	}
-	if !strings.Contains(v, "一句话总结第一条") || strings.Contains(v, "───") {
-		t.Fatalf("三栏预览\n%s", v)
-	}
-	// 预览栏不参与点击与切栏。
-	if h := m.hitTest(129, 3); h.what != hitNone {
-		t.Fatalf("点击预览栏不应选中条目：%+v", h)
+	// 宽屏一律在榜单下方：129、130 与更宽都一样，只有两栏。
+	for _, w := range []int{56, 129, 130, 200} {
+		m.Update(tea.WindowSizeMsg{Width: w, Height: 30})
+		v := plainView(m)
+		if m.previewHeight() != max(previewMinRows, m.bodyHeight()*2/5) || strings.Count(lineWith(v, "知乎第一"), "│") != 1 || !strings.Contains(v, "───") {
+			t.Fatalf("%d 列预览应在榜单下方\n%s", w, v)
+		}
+		if m.rightWidth() != w-m.leftWidth()-1 {
+			t.Fatal("榜单占满右栏")
+		}
 	}
 	key(t, m, "right")
 	if m.focus != focusList {
-		t.Fatal("→ 不进入预览栏")
-	}
-	// 三栏也遵守最小高度；不足 16 行时退回下方预览的规则（不足 24 行不显示）。
-	m.Update(tea.WindowSizeMsg{Width: 130, Height: 15})
-	if m.previewSide() || m.previewHeight() != 0 {
-		t.Fatal("130x15 不显示预览")
-	}
-	m.Update(tea.WindowSizeMsg{Width: 130, Height: 16})
-	if !m.previewSide() {
-		t.Fatal("130x16 应为三栏")
-	}
-	// p 关闭三栏预览，榜单变宽。
-	key(t, m, "p")
-	if m.previewSide() || m.rightWidth() != 130-m.leftWidth()-1 {
-		t.Fatal("p 应关闭三栏预览")
-	}
-	key(t, m, "p")
-	if !m.previewSide() {
-		t.Fatal("p 应重新打开")
+		t.Fatal("→ 停在榜单")
 	}
 }
 
@@ -440,8 +465,8 @@ func TestPreviewToggleSaved(t *testing.T) {
 	}
 	m2 := start(t, insightFake(), Options{LoggedIn: true, Now: fixedNow, StatePath: path})
 	m2.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
-	if !m2.previewOff || m2.previewSide() {
-		t.Fatal("重新启动后应保持关闭（三栏同样）")
+	if !m2.previewOff || m2.previewShown() {
+		t.Fatal("重新启动后应保持关闭")
 	}
 	key(t, m2, "p")
 	m2.SaveState()

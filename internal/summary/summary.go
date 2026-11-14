@@ -341,7 +341,15 @@ func wrapSegs(segs []seg, width int) [][]seg {
 			continue
 		}
 		if a.width <= width && used > 0 {
+			// 禁则：行首不放“，。、；：」』）”等标点，把上一行最后一个字一起带到下一行。
+			var carry *atom
+			if noLineStart(a.text) {
+				carry = popLast(&cur, &used)
+			}
 			flush()
+			if carry != nil {
+				push(*carry)
+			}
 			push(a)
 			continue
 		}
@@ -361,6 +369,32 @@ func wrapSegs(segs []seg, width int) [][]seg {
 		flush()
 	}
 	return lines
+}
+
+// noLineStart 表示不能出现在行首的标点。
+func noLineStart(s string) bool {
+	r, _ := utf8.DecodeRuneInString(s)
+	return strings.ContainsRune("，。、；：！？」』）】》〉”’,.;:!?)]", r) && utf8.RuneCountInString(s) == 1
+}
+
+// popLast 从当前行取出最后一个字（不是空白，且取出后行不为空），用于禁则处理；取不出时返回 nil。
+func popLast(cur *[]seg, used *int) *atom {
+	n := len(*cur)
+	if n == 0 {
+		return nil
+	}
+	last := &(*cur)[n-1]
+	r, size := utf8.DecodeLastRuneInString(last.text)
+	if unicode.IsSpace(r) || noLineStart(string(r)) || *used-runewidth.RuneWidth(r) <= 0 {
+		return nil
+	}
+	a := atom{text: last.text[len(last.text)-size:], role: last.role, width: runewidth.RuneWidth(r)}
+	last.text = last.text[:len(last.text)-size]
+	if last.text == "" {
+		*cur = (*cur)[:n-1]
+	}
+	*used -= a.width
+	return &a
 }
 
 func spaces(n int) string {

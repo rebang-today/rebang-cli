@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"regexp"
 	"strings"
 	"time"
 
@@ -27,10 +28,6 @@ const (
 	previewMinHeight = 24
 	// previewMinRows 是下方预览区最少的行数（含分隔线）。
 	previewMinRows = 6
-	// sideMinWidth、sideMinHeight 是三栏布局（来源 | 榜单 | 预览）的最小尺寸；sidePaneMin 是预览栏最少的列数。
-	sideMinWidth  = 130
-	sideMinHeight = 16
-	sidePaneMin   = 36
 	// insightWait 是光标停下后到请求完整总结之间的等待时间。
 	insightWait = 200 * time.Millisecond
 )
@@ -117,23 +114,9 @@ func (m *model) onShorts(msg shortsMsg) {
 
 // ---- 预览 ----
 
-// previewSide 表示三栏布局：来源 | 榜单 | 预览。
-func (m *model) previewSide() bool {
-	return !m.previewOff && m.wide() && m.width >= sideMinWidth && m.height >= sideMinHeight && !m.help
-}
-
-// sideWidth 是三栏布局时预览栏的宽度：约占右侧区域的 40%，至少 36 列；不是三栏时为 0。
-func (m *model) sideWidth() int {
-	if !m.previewSide() {
-		return 0
-	}
-	rest := m.width - m.leftWidth() - 1
-	return max(sidePaneMin, rest*2/5)
-}
-
 // previewHeight 是双栏时榜单下方预览区占用的行数（含分隔线），不显示时为 0。
 func (m *model) previewHeight() int {
-	if m.previewOff || !m.wide() || m.previewSide() || m.height < previewMinHeight || m.help || len(m.items) == 0 {
+	if m.previewOff || !m.wide() || m.height < previewMinHeight || m.help || len(m.items) == 0 {
 		return 0
 	}
 	return max(previewMinRows, m.bodyHeight()*2/5)
@@ -144,14 +127,12 @@ func (m *model) previewFull() bool { return m.pvFull && !m.wide() && m.focus == 
 
 // previewShown 表示当前能看到预览。
 func (m *model) previewShown() bool {
-	return m.previewSide() || m.previewHeight() > 0 || m.previewFull()
+	return m.previewHeight() > 0 || m.previewFull()
 }
 
 // previewBox 返回预览正文的宽度与可见行数。
 func (m *model) previewBox() (w, h int) {
 	switch {
-	case m.previewSide():
-		return m.sideWidth() - 2, m.bodyHeight()
 	case m.previewFull():
 		return m.width - 2, m.bodyHeight() - 1
 	case m.previewHeight() > 0:
@@ -172,7 +153,7 @@ func (m *model) togglePreview() {
 	switch {
 	case m.previewOff:
 		m.flash("已关闭预览", false)
-	case !m.previewSide() && m.height < previewMinHeight:
+	case m.height < previewMinHeight:
 		m.flash("已打开预览（窗口至少 24 行时显示在榜单下方）", false)
 	default:
 		m.flash("已打开预览", false)
@@ -190,11 +171,18 @@ func (m *model) pagePreview() {
 	if n <= h {
 		return
 	}
-	if m.pvOff+h >= n {
+	page := h - 1 // 最后一行留给“↓ 更多”
+	if m.pvOff+page >= n {
 		m.pvOff = 0
 		return
 	}
-	m.pvOff = min(m.pvOff+h, n-h)
+	m.pvOff = min(m.pvOff+page, n-page)
+}
+
+// previewOverflows 表示当前预览内容放不下，需要翻页。
+func (m *model) previewOverflows() bool {
+	w, h := m.previewBox()
+	return h > 0 && len(m.previewContent(w)) > h
 }
 
 // syncPreview 在选中条目变化时让预览回到顶部，并在光标停下约 200ms 后请求完整总结。
@@ -314,14 +302,26 @@ func (m *model) previewContent(w int) []string {
 		}
 		// 出错时只显示一句话总结，不显示错误。
 	}
-	if it.desc != "" {
-		out = append(out, "")
-		add(summary.Line{Kind: summary.Heading, Text: "简介"}, summary.Line{Kind: summary.Para, Text: it.desc})
+	desc := it.desc
+	if placeholderOnly(desc) {
+		desc = ""
 	}
-	if (!has || short == "") && it.desc == "" {
+	if desc != "" {
+		out = append(out, "")
+		add(summary.Line{Kind: summary.Heading, Text: "简介"}, summary.Line{Kind: summary.Para, Text: desc})
+	}
+	if (!has || short == "") && desc == "" {
 		out = append(out, "", styleDim.Render("暂无摘要"))
 	}
 	return out
+}
+
+// placeholderPat 匹配“[图片]”“[视频]”这类方括号里的短占位文字。
+var placeholderPat = regexp.MustCompile(`\[[^\[\]]{1,6}\]|【[^【】]{1,6}】`)
+
+// placeholderOnly 表示文本去掉占位文字与空白后什么都不剩（如简介只有“[图片]”）。
+func placeholderOnly(s string) bool {
+	return strings.TrimSpace(placeholderPat.ReplaceAllString(s, "")) == ""
 }
 
 // previewBody 把预览正文按翻页位置截成 h 行（每行左边留 1 列），超出时右下角显示“↓ 更多”。
@@ -330,8 +330,12 @@ func (m *model) previewBody(w, h int) []string {
 		return fill(nil, max(w, 0), h)
 	}
 	all := m.previewContent(w - 2)
-	off := clampOff(m.pvOff, len(all), h)
-	end := min(off+h, len(all))
+	page := h
+	if len(all) > h {
+		page = h - 1 // 放不下时最后一行专门放“↓ 更多”，不盖住正文
+	}
+	off := clampOff(m.pvOff, len(all), page)
+	end := min(off+page, len(all))
 	out := make([]string, 0, h)
 	for _, l := range all[off:end] {
 		out = append(out, " "+l)
@@ -339,10 +343,9 @@ func (m *model) previewBody(w, h int) []string {
 	out = fill(out, w, h)
 	if end < len(all) {
 		tag := styleDim.Render("↓ 更多")
-		tw := lipgloss.Width(tag)
-		if room := w - tw - 1; room >= 0 {
-			base := ansiTruncate(out[h-1], room)
-			out[h-1] = base + spaces(room-lipgloss.Width(base)) + tag + " "
+		out[h-1] = spaces(w-lipgloss.Width(tag)-1) + tag + " "
+		if lipgloss.Width(out[h-1]) > w {
+			out[h-1] = ansiTruncate(tag, w)
 		}
 	}
 	return out

@@ -481,7 +481,18 @@ func TestEmptyListHint(t *testing.T) {
 	m := start(t, f, Options{})
 	v := m.View()
 	if !strings.Contains(v, "暂无内容") || !strings.Contains(v, "↓ 换一个榜单") {
-		t.Fatalf("空列表应提示换一个榜单\n%s", v)
+		t.Fatalf("左栏焦点提示 ↓ 换一个榜单\n%s", v)
+	}
+	// 榜单焦点下 ↓ 不换来源，提示 ←。
+	key(t, m, "l")
+	if v := plainView(m); !strings.Contains(v, "← 换一个榜单") {
+		t.Fatalf("榜单焦点提示 ← 换一个榜单\n%s", v)
+	}
+	// 单栏启动时焦点在榜单。
+	m2 := start(t, f, Options{})
+	m2.Update(tea.WindowSizeMsg{Width: 48, Height: 12})
+	if v := plainView(m2); !strings.Contains(v, "← 换一个榜单") {
+		t.Fatalf("单栏提示 ← 换一个榜单\n%s", v)
 	}
 }
 
@@ -631,7 +642,7 @@ func TestNarrowLayout(t *testing.T) {
 	if v := m.View(); !strings.Contains(v, "微博") || strings.Contains(v, "知乎第一") || !m.picking() {
 		t.Fatalf("← 应打开来源列表\n%s", v)
 	}
-	if st := golden.StripANSI(m.statusLine()); !strings.Contains(st, "↑↓ 选来源") {
+	if st := golden.StripANSI(m.statusLine()); !strings.Contains(st, "→ 进入榜单") {
 		t.Fatalf("来源列表的提示：%s", st)
 	}
 	calls := len(f.listCalls)
@@ -1104,7 +1115,8 @@ func TestHints(t *testing.T) {
 		t.Fatalf("左栏提示：%q", st())
 	}
 	key(t, m, "l")
-	if want := "↑↓ 移动  ← 来源  tab 子榜  ↵ 打开  空格 翻预览  0-2 分类  / 搜索  ? 帮助  q 退出"; !strings.HasSuffix(st(), want) {
+	// 看不到预览时不提示翻预览。
+	if want := "↑↓ 移动  ← 来源  tab 子榜  ↵ 打开  0-2 分类  / 搜索  ? 帮助  q 退出"; !strings.HasSuffix(st(), want) {
 		t.Fatalf("榜单提示：%q", st())
 	}
 	// 只有一个子榜单时不显示 tab。
@@ -1118,24 +1130,83 @@ func TestHints(t *testing.T) {
 	if !strings.Contains(st(), "↵ 打开  esc 返回榜单") {
 		t.Fatalf("搜索结果提示：%q", st())
 	}
-	// 窄窗口：从后往前去掉，? 与 q 保留。
-	key(t, m, "esc", "h", "j")
+}
+
+// TestHintsPriority：窄窗口先缩短账号状态，再按重要性去掉提示；← 来源 / → 进入榜单 最后才去掉。
+func TestHintsPriority(t *testing.T) {
+	f := newFake()
+	f.account = &cli.AccountView{ID: 1, Email: "admin@rebang.today", IsMember: true, MemberExpiresAt: "2027-05-13T23:59:00+08:00"}
+	m := start(t, f, Options{LoggedIn: true})
+	st := func() string { return strings.TrimSpace(golden.StripANSI(m.statusLine())) }
+	key(t, m, "j")
 	settle(t, m)
-	key(t, m, "l")
-	for _, w := range []int{100, 80, 60, 56, 48, 40} {
-		m.Update(tea.WindowSizeMsg{Width: w, Height: 20})
-		s := st()
-		if !strings.HasSuffix(s, "? 帮助  q 退出") || lipgloss.Width(m.statusLine()) != w {
-			t.Fatalf("%d 列应保留 ? 与 q：%q", w, s)
+	for _, focus := range []string{"tree", "list"} {
+		if focus == "list" {
+			key(t, m, "l")
 		}
-		all := []string{"↑↓ 移动", "← 来源", "tab 子榜", "↵ 打开", "空格 翻预览", "0-2 分类", "/ 搜索"}
-		gone := false
-		for _, h := range all {
-			has := strings.Contains(s, h)
-			if has && gone {
-				t.Fatalf("%d 列应从后往前去掉：%q", w, s)
+		nav := map[string]string{"tree": "→ 进入榜单", "list": "← 来源"}[focus]
+		for _, w := range []int{160, 100, 80, 60, 56, 48, 40} {
+			m.Update(tea.WindowSizeMsg{Width: w, Height: 20})
+			if focus == "tree" && w < 56 && m.focus != focusTree {
+				key(t, m, "left") // 单栏打开来源列表
 			}
-			gone = gone || !has
+			s := st()
+			if !strings.HasSuffix(s, "? 帮助  q 退出") || lipgloss.Width(m.statusLine()) != w {
+				t.Fatalf("%s %d 列应保留 ? 与 q：%q", focus, w, s)
+			}
+			if !strings.Contains(s, nav) {
+				t.Fatalf("%s %d 列应保留 %s：%q", focus, w, nav, s)
+			}
+			if !strings.HasPrefix(s, "●") {
+				t.Fatalf("%d 列应保留账号状态：%q", w, s)
+			}
+			// 低优先级（分类、搜索、打开）先于中优先级（移动、子榜）去掉。
+			if (strings.Contains(s, "↑↓") || strings.Contains(s, "tab 子榜")) && !strings.Contains(s, "/ 搜索") && strings.Contains(s, "0-2 分类") {
+				t.Fatalf("%d 列去掉顺序不对：%q", w, s)
+			}
+			if !strings.Contains(s, "0-2 分类") && strings.Contains(s, "/ 搜索") {
+				t.Fatalf("同等重要时先去掉靠后的：%q", s)
+			}
 		}
+		// 账号状态逐级缩短：先去掉到期时间。
+		m.Update(tea.WindowSizeMsg{Width: 160, Height: 20})
+		m.focus = focusTree
+		if s := st(); !strings.Contains(s, "admin@rebang.today · 会员，") {
+			t.Fatalf("宽屏显示完整账号：%q", s)
+		}
+	}
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
+	if s := st(); strings.Contains(s, "到期") || !strings.Contains(s, "· 会员") || !strings.Contains(s, "/ 搜索") {
+		t.Fatalf("100 列先去掉到期时间，保留全部提示：%q", s)
+	}
+	m.Update(tea.WindowSizeMsg{Width: 48, Height: 20})
+	if s := st(); !strings.HasPrefix(s, "● 会员  ") {
+		t.Fatalf("48 列只留“● 会员”：%q", s)
+	}
+}
+
+// TestHintsPreview：预览关闭或放得下时不提示翻预览；整栏预览有自己的提示。
+func TestHintsPreview(t *testing.T) {
+	m := start(t, insightFake(), Options{Now: fixedNow})
+	st := func() string { return strings.TrimSpace(golden.StripANSI(m.statusLine())) }
+	m.Update(tea.WindowSizeMsg{Width: 160, Height: 30})
+	key(t, m, "l")
+	waitInsight(t, m)
+	if !strings.Contains(st(), "↵ 打开  空格 翻预览") {
+		t.Fatalf("内容放不下时提示翻预览：%q", st())
+	}
+	key(t, m, "j") // 第二条只有简介，放得下
+	if strings.Contains(st(), "空格") {
+		t.Fatalf("放得下时不提示：%q", st())
+	}
+	key(t, m, "k", "p")
+	if strings.Contains(st(), "空格") {
+		t.Fatalf("预览关闭时不提示：%q", st())
+	}
+	key(t, m, "p")
+	m.Update(tea.WindowSizeMsg{Width: 48, Height: 16})
+	key(t, m, "p")
+	if want := "↑↓ 换条  空格 翻页  p/esc 返回  ? 帮助  q 退出"; !strings.HasSuffix(st(), want) {
+		t.Fatalf("整栏预览提示：%q", st())
 	}
 }
