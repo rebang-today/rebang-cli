@@ -85,7 +85,7 @@ func (in *Insight) ParseDetail() InsightDetail {
 	return d
 }
 
-// InsightsBatch POST /v1/item/insights/batch（需登录）。超过 50 个时分批请求，
+// InsightsBatch POST /v1/item/insights/batch（可选登录）。超过 50 个时分批请求，
 // 返回有总结的 item_key；没有总结的不出现在结果中。任一批失败即返回错误。
 func (c *Client) InsightsBatch(ctx context.Context, keys []string) (map[string]InsightShort, error) {
 	out := map[string]InsightShort{}
@@ -114,7 +114,7 @@ func (c *Client) InsightsBatch(ctx context.Context, keys []string) (map[string]I
 	return out, nil
 }
 
-// Insight GET /v1/item/insight?item_key=（需登录）。没有总结时服务端返回 404。
+// Insight GET /v1/item/insight?item_key=（可选登录）。没有总结时服务端返回 404。
 func (c *Client) Insight(ctx context.Context, itemKey string) (*Insight, error) {
 	var out Insight
 	err := c.do(ctx, http.MethodGet, "/item/insight", url.Values{"item_key": {itemKey}}, nil, &out)

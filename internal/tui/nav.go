@@ -33,16 +33,14 @@ type source struct {
 	node  api.Node
 }
 
-// subTab 是右栏顶部子榜单条的一项。
-type subTab struct{ key, label string }
+// subTab 是右栏顶部子榜单条的一项。note 是标签后灰色的附注（如监控计划“已暂停”）。
+type subTab struct{ key, label, note string }
 
 // followMenuID 是“订阅”菜单的编号。它不是服务端的菜单，数据来自用户订阅的 Tab。
 const followMenuID int64 = -1
 
-// monitoringTabKey 是订阅中“内容监控”Tab 的 key，它的列表不在公开的榜单接口里。
+// monitoringTabKey 是订阅中“内容监控”Tab 的 key，它的列表来自 /v1/monitoring 接口（D-27）。
 const monitoringTabKey = "monitoring"
-
-const monitoringNotice = "内容监控暂不支持在命令行查看，请在今日热榜网站查看"
 
 const followMenuName = "订阅"
 
@@ -78,7 +76,7 @@ func (s source) subs() []subTab {
 	}
 	out := make([]subTab, len(s.tab.Children))
 	for i, c := range s.tab.Children {
-		out[i] = subTab{c.Key, c.Name}
+		out[i] = subTab{key: c.Key, label: c.Name}
 	}
 	return out
 }
@@ -148,7 +146,7 @@ func window(ws []int, cur, avail int) (lo, hi int) {
 	}
 }
 
-// unsupported 报告该来源的列表无法通过公开接口加载（目前只有内容监控）。
-func (s source) unsupported() bool {
+// monitoring 报告该来源是内容监控，列表来自 /v1/monitoring 接口而不是榜单接口。
+func (s source) monitoring() bool {
 	return s.kind == srcTab && (s.tab.Key == monitoringTabKey || s.tab.Type == monitoringTabKey)
 }

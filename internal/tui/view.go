@@ -105,7 +105,7 @@ func (m *model) wide() bool { return m.width >= wideMinWidth }
 func (m *model) leftWidth() int {
 	w := 0
 	for _, s := range m.curSources() {
-		if x := runewidth.StringWidth(sourceLabel(s)); x > w {
+		if x := runewidth.StringWidth(m.sourceLabel(s)); x > w {
 			w = x
 		}
 	}
@@ -119,7 +119,14 @@ func (m *model) leftWidth() int {
 	return w
 }
 
-func sourceLabel(s source) string { return s.label }
+func (m *model) sourceLabel(s source) string {
+	if s.monitoring() {
+		if n := m.monitorUnreadAll(); n > 0 {
+			return s.label + " " + itoa(n)
+		}
+	}
+	return s.label
+}
 
 // rightX 是右栏第一列的横坐标。
 func (m *model) rightX() int {
@@ -373,7 +380,7 @@ func (m *model) sourceLines(w, h int) []string {
 	out := make([]string, 0, max(h, 0))
 	for i := m.srcOff; i < len(srcs) && len(out) < h; i++ {
 		s := srcs[i]
-		label := runewidth.Truncate(sourceLabel(s), w-3, "…")
+		label := runewidth.Truncate(m.sourceLabel(s), w-3, "…")
 		gap := spaces(w - 2 - runewidth.StringWidth(label))
 		sel := i == m.srcCur
 		var text string
@@ -411,6 +418,9 @@ func (m *model) titleRow(w int) string {
 	default:
 		if s := m.curSource(); s.kind != srcNone {
 			title = s.label
+			if s.monitoring() && m.mon.unreadOnly {
+				title += " · 只看未读"
+			}
 		} else if mn, ok := m.curMenu(); ok && mn.ID == followMenuID {
 			title = mn.Name
 		}
@@ -418,6 +428,9 @@ func (m *model) titleRow(w int) string {
 	count := ""
 	if n := len(m.items); n > 0 && !m.loading {
 		count = itoa(int64(n)) + " 条"
+		if m.inMonitor() && m.mon.hasMore {
+			count = itoa(int64(n)) + "+ 条"
+		}
 	}
 	cw := runewidth.StringWidth(count)
 	room := w - 2 - cw - 2
@@ -437,6 +450,9 @@ func (m *model) stripSegs(x0, w int) ([]seg, bool, bool) {
 	labels := make([]string, len(subs))
 	for i, s := range subs {
 		labels[i] = s.label
+		if s.note != "" {
+			labels[i] += " " + s.note
+		}
 	}
 	return strip(labels, m.subIdx, x0+1, w-2)
 }
@@ -457,12 +473,24 @@ func (m *model) stripRow(w int) string {
 	if left {
 		b.WriteString(styleDim.Render("‹"))
 	}
+	subs := m.curSubs()
 	for _, s := range segs {
-		if s.idx == clampIdx(m.subIdx, len(m.curSubs())) {
-			b.WriteString(styleTabOn.Render(s.text))
-		} else {
-			b.WriteString(styleDim.Render(s.text))
+		st := styleDim
+		if s.idx == clampIdx(m.subIdx, len(subs)) {
+			st = styleTabOn
 		}
+		// 附注（如“已暂停”）始终灰色显示。
+		note := ""
+		if s.idx < len(subs) {
+			note = subs[s.idx].note
+		}
+		if i := strings.LastIndex(s.text, " "+note+" "); note != "" && i >= 0 {
+			b.WriteString(st.Render(s.text[:i+1]))
+			b.WriteString(st.Foreground(colorDim).Bold(false).Render(note))
+			b.WriteString(st.Render(s.text[i+1+len(note):]))
+			continue
+		}
+		b.WriteString(st.Render(s.text))
 	}
 	if right {
 		b.WriteString(styleDim.Render("›"))
@@ -541,6 +569,9 @@ func centered(lines []string, w, h int) []string {
 func (m *model) listLines(w, h int) []string {
 	if len(m.items) == 0 {
 		return centered(m.emptyState(w), w, h)
+	}
+	if m.inMonitor() {
+		return m.monitorLines(w, h)
 	}
 	out := make([]string, 0, max(h, 0))
 	focused := m.focus == focusList
@@ -669,6 +700,9 @@ func (m *model) hints() []hint {
 		hs = []hint{{"↑↓", "选择"}, {"↵", "切换"}, {"esc", "返回榜单"}, {m.menuKeys(), "分类"}}
 	case !m.wide():
 		hs = []hint{{"tab", "来源"}, {"↵", "打开"}, {"空格", "详情"}}
+		if m.inMonitor() {
+			hs = append(hs, m.unreadHint())
+		}
 		if sub {
 			hs = append(hs, hint{"←→", "切换"})
 		}
@@ -681,6 +715,9 @@ func (m *model) hints() []hint {
 		hs = append(hs, hint{"↵", "进入列表"}, hint{m.menuKeys(), "分类"}, hint{"空格", "详情"}, hint{"/", "搜索"}, hint{"p", "预览"})
 	default:
 		hs = []hint{{"↵", "打开"}, {"空格", "详情"}}
+		if m.inMonitor() {
+			hs = append(hs, m.unreadHint())
+		}
 		if sub {
 			hs = append(hs, hint{"←→", "切换"})
 		}
@@ -805,7 +842,7 @@ var helpKeys = []struct {
 	keys  []hint
 }{
 	{"浏览", []hint{{"↑ ↓  j k", "在当前栏上下移动，左栏停下后自动加载"}, {"← →  h l", "切换子榜单"}, {"J K  ⇧↑ ⇧↓", "在榜单中切换上一个、下一个来源"}, {"0-9  [ ]", "切换分类，0 为订阅"}, {"tab", "切换左右栏；单栏时打开来源列表"}, {"g G  PgUp PgDn", "开头、结尾、翻页"}}},
-	{"操作", []hint{{"回车", "左栏进入列表；列表中在浏览器打开；来源列表中切换来源"}, {"空格", "详情与 AI 总结（" + insightMark + " 表示有总结）"}, {"p", "打开或关闭底部预览（双栏且至少 24 行时显示）"}, {"esc", "列表返回左栏；来源列表返回榜单；搜索时返回榜单"}, {"/  y", "搜索、复制链接"}, {"r", "刷新"}, {"?  q", "帮助、退出"}}},
+	{"操作", []hint{{"回车", "左栏进入列表；列表中在浏览器打开；来源列表中切换来源"}, {"空格", "详情与 AI 总结（" + insightMark + " 表示有总结）"}, {"p", "打开或关闭底部预览（双栏且至少 24 行时显示）"}, {"u", "内容监控中切换全部、只看未读"}, {"esc", "列表返回左栏；来源列表返回榜单；搜索时返回榜单"}, {"/  y  r", "搜索、复制链接、刷新"}, {"?  q", "帮助、退出"}}},
 }
 
 func (m *model) helpBody(w, h int) []string {
@@ -918,4 +955,12 @@ func fill(lines []string, w, h int) []string {
 		}
 	}
 	return lines
+}
+
+// unreadHint 是内容监控中切换“全部 / 只看未读”的提示。
+func (m *model) unreadHint() hint {
+	if m.mon.unreadOnly {
+		return hint{"u", "看全部"}
+	}
+	return hint{"u", "只看未读"}
 }

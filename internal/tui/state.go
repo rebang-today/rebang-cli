@@ -32,6 +32,8 @@ type posState struct {
 	Subs map[string]string `json:"subs,omitempty"`
 	// Preview 是双栏底部的 AI 总结预览是否打开，缺省为打开（D-26）。
 	Preview *bool `json:"preview,omitempty"`
+	// MonitorUnread 是内容监控是否只看未读（D-27），缺省为全部。
+	MonitorUnread *bool `json:"monitor_unread,omitempty"`
 }
 
 // loadPosState 读取状态文件；不存在、损坏或版本不认识时返回空记忆。
@@ -83,6 +85,10 @@ func (m *model) snapshot() posState {
 	}
 	preview := !m.previewOff
 	s.Preview = &preview
+	if m.mon.unreadOnly {
+		on := true
+		s.MonitorUnread = &on
+	}
 	return s
 }
 

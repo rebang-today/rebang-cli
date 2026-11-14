@@ -17,10 +17,16 @@ type Source interface {
 	List(ctx context.Context, t listTarget, limit int) (*cli.ListResult, error)
 	Search(ctx context.Context, q string, limit int) (*cli.SearchResult, error)
 	Account(ctx context.Context) (*cli.AccountView, error)
-	// InsightShorts 批量查询一句话总结（需登录），返回有总结的 item_key。
+	// InsightShorts 批量查询一句话总结（可选登录），返回有总结的 item_key。
 	InsightShorts(ctx context.Context, keys []string) (map[string]string, error)
-	// Insight 查询单条完整 AI 总结（需登录），没有总结时返回 errNoSummary。
+	// Insight 查询单条完整 AI 总结（可选登录），没有总结时返回 errNoSummary。
 	Insight(ctx context.Context, key string) (*api.Insight, error)
+	// 内容监控（需登录，D-27）。
+	MonitorPlans(ctx context.Context) ([]api.MonitorPlan, error)
+	MonitorUnread(ctx context.Context) (*api.MonitorUnread, error)
+	MonitorHits(ctx context.Context, q api.MonitorHitsQuery) (*api.MonitorHits, error)
+	// MonitorRead 把一条命中内容标为已读，返回最新的未读数。
+	MonitorRead(ctx context.Context, key string) (*api.MonitorUnread, error)
 	// CheckUpdate 返回可用的新版本，没有时返回 nil。
 	CheckUpdate(ctx context.Context) (*update.Manifest, error)
 	// Install 安装新版本。
@@ -106,6 +112,26 @@ func (s *apiSource) Insight(ctx context.Context, key string) (*api.Insight, erro
 		return nil, api.MapError(err)
 	}
 	return in, nil
+}
+
+func (s *apiSource) MonitorPlans(ctx context.Context) ([]api.MonitorPlan, error) {
+	p, err := s.client.MonitorPlans(ctx)
+	return p, api.MapError(err)
+}
+
+func (s *apiSource) MonitorUnread(ctx context.Context) (*api.MonitorUnread, error) {
+	u, err := s.client.MonitorUnreadCounts(ctx)
+	return u, api.MapError(err)
+}
+
+func (s *apiSource) MonitorHits(ctx context.Context, q api.MonitorHitsQuery) (*api.MonitorHits, error) {
+	h, err := s.client.MonitorHitsPage(ctx, q)
+	return h, api.MapError(err)
+}
+
+func (s *apiSource) MonitorRead(ctx context.Context, key string) (*api.MonitorUnread, error) {
+	u, err := s.client.MonitorMarkRead(ctx, key)
+	return u, api.MapError(err)
 }
 
 func (s *apiSource) CheckUpdate(ctx context.Context) (*update.Manifest, error) {

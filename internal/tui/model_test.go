@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -39,6 +40,84 @@ type fakeSource struct {
 	insights     map[string]*api.Insight
 	insightErr   error
 	insightCalls []string
+	// 内容监控：monHits 是全部命中内容，按 cursor（偏移量）分页。
+	monPlans     []api.MonitorPlan
+	monUnread    *api.MonitorUnread
+	monHits      []api.MonitorHit
+	monErr       error
+	monHitsErr   error
+	monReadErr   error
+	monHitsCalls []api.MonitorHitsQuery
+	monReadCalls []string
+	monUnreadN   int
+}
+
+func (f *fakeSource) MonitorPlans(context.Context) ([]api.MonitorPlan, error) {
+	if f.monErr != nil {
+		return nil, f.monErr
+	}
+	if f.monPlans == nil {
+		return []api.MonitorPlan{}, nil
+	}
+	return f.monPlans, nil
+}
+func (f *fakeSource) MonitorUnread(context.Context) (*api.MonitorUnread, error) {
+	f.monUnreadN++
+	if f.monErr != nil {
+		return nil, f.monErr
+	}
+	if f.monUnread == nil {
+		return &api.MonitorUnread{}, nil
+	}
+	return f.monUnread, nil
+}
+func (f *fakeSource) MonitorHits(_ context.Context, q api.MonitorHitsQuery) (*api.MonitorHits, error) {
+	f.monHitsCalls = append(f.monHitsCalls, q)
+	if f.monHitsErr != nil {
+		return nil, f.monHitsErr
+	}
+	var all []api.MonitorHit
+	for _, h := range f.monHits {
+		if q.UnreadOnly && h.IsRead {
+			continue
+		}
+		if q.PlanID > 0 {
+			hit := false
+			for _, p := range h.PlanMatches {
+				hit = hit || p.PlanID == q.PlanID
+			}
+			if !hit {
+				continue
+			}
+		}
+		all = append(all, h)
+	}
+	off, _ := strconv.Atoi(q.Cursor)
+	end := min(off+q.PageSize, len(all))
+	off = min(off, end)
+	res := &api.MonitorHits{Items: all[off:end]}
+	if end < len(all) {
+		res.NextCursor, res.HasMore = strconv.Itoa(end), true
+	}
+	return res, nil
+}
+func (f *fakeSource) MonitorRead(_ context.Context, key string) (*api.MonitorUnread, error) {
+	f.monReadCalls = append(f.monReadCalls, key)
+	if f.monReadErr != nil {
+		return nil, f.monReadErr
+	}
+	for i := range f.monHits {
+		if f.monHits[i].ItemKey == key {
+			f.monHits[i].IsRead = true
+		}
+	}
+	if f.monUnread != nil {
+		f.monUnread.All--
+		for i := range f.monUnread.Plans {
+			f.monUnread.Plans[i].UnreadCount--
+		}
+	}
+	return f.monUnread, nil
 }
 
 func (f *fakeSource) Menus(context.Context) ([]api.Menu, error) { return f.menus, nil }
@@ -810,17 +889,17 @@ func TestFollowMenu(t *testing.T) {
 	if m.target.subTab != "news" || m.focus != focusTree {
 		t.Fatalf("→ 应切换子榜单，target=%+v", m.target)
 	}
-	// 内容监控的列表不在公开接口里：不发请求，显示明确提示，不崩溃。
+	// 内容监控没有计划：提示去网站创建，不崩溃。
 	key(t, m, "j")
 	settle(t, m)
-	if m.target.key() != "||" || m.loading || m.listErr != "" || m.listNotice != monitoringNotice {
-		t.Fatalf("内容监控应直接提示，target=%+v err=%q notice=%q", m.target, m.listErr, m.listNotice)
+	if m.loading || m.listErr != "" || !strings.HasPrefix(m.listNotice, "还没有监控计划") {
+		t.Fatalf("内容监控没有计划时应提示，target=%+v err=%q notice=%q", m.target, m.listErr, m.listNotice)
 	}
-	if v := m.View(); !strings.Contains(v, "内容监控暂不支持在命令行查看") || strings.Contains(v, "←→") {
-		t.Fatalf("应显示内容监控提示\n%s", v)
+	if v := m.View(); strings.Contains(v, "←→") {
+		t.Fatalf("没有计划时不显示子榜单\n%s", v)
 	}
 	key(t, m, "r", "l")
-	if m.listNotice != monitoringNotice || m.listErr != "" {
+	if !strings.HasPrefix(m.listNotice, "还没有监控计划") || m.listErr != "" {
 		t.Fatalf("在内容监控上按键不应出错，err=%q", m.listErr)
 	}
 	key(t, m, "j")

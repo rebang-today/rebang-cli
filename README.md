@@ -57,6 +57,7 @@ rebang auth login           # 浏览器登录（SSH 等无桌面环境加 --no-b
 rebang list --tab zhihu     # 知乎热榜
 rebang search 大模型        # 搜索
 rebang summary <item_key>   # 条目的 AI 总结（item_key 来自 list -o json）
+rebang monitor hits --unread # 内容监控中未读的命中内容（需登录）
 rebang skill install        # 把 Skill 装进本机的 Agent
 ```
 
@@ -76,11 +77,12 @@ rebang skill install        # 把 Skill 装进本机的 Agent
 | `p` | 打开或关闭底部的 AI 总结预览（双栏且至少 24 行时显示） |
 | `y` | 复制链接 |
 | `r` | 刷新 |
+| `u` | 内容监控中切换全部、只看未读 |
 | `g` `G` / `PgUp` `PgDn` | 开头、结尾、翻页 |
 | `?` | 帮助 |
 | `q` | 退出 |
 
-顶部是分类栏，最前面的“订阅”列出登录用户订阅的榜单（其中的内容监控暂需在网站查看）；左栏是当前分类的榜单，右栏上方是子榜单条（只有一个子榜单时不显示）。标题等外部文本中的不可见字符会被去掉，`-o json` 保留原文。支持鼠标：点击分类、榜单、子榜单切换，点击条目选中、双击打开，滚轮滚动，支持的终端（kitty、Ghostty、foot 等）中悬停可点击元素时指针变为小手。窗口较窄（56 列以下）时切换为单栏，默认显示榜单，按 `tab` 打开来源列表；最小尺寸 40×10，更小时提示放大窗口；主题跟随终端深浅色，配色以网站蓝为主（深色终端用更柔和的蓝），前 3 名序号为橙色。上次浏览的位置保存在配置目录的 `tui-state.json`，下次启动自动恢复。
+顶部是分类栏，最前面的“订阅”列出登录用户订阅的榜单（其中的“内容监控”显示命中内容：回车打开原文并标为已读，`u` 只看未读；监控计划在网站上管理）；左栏是当前分类的榜单，右栏上方是子榜单条（只有一个子榜单时不显示）。标题等外部文本中的不可见字符会被去掉，`-o json` 保留原文。支持鼠标：点击分类、榜单、子榜单切换，点击条目选中、双击打开，滚轮滚动，支持的终端（kitty、Ghostty、foot 等）中悬停可点击元素时指针变为小手。窗口较窄（56 列以下）时切换为单栏，默认显示榜单，按 `tab` 打开来源列表；最小尺寸 40×10，更小时提示放大窗口；主题跟随终端深浅色，配色以网站蓝为主（深色终端用更柔和的蓝），前 3 名序号为橙色。上次浏览的位置保存在配置目录的 `tui-state.json`，下次启动自动恢复。
 
 有 AI 总结的条目标题前显示 `✦`；双栏且窗口足够高时，右栏底部预览选中条目的来源、时间、热度与一句话总结（没有总结时显示描述），`p` 开关并记住；按空格打开全屏详情，查看要点、经过、观点与网友怎么看。榜单按配置的间隔自动刷新（默认 5 分钟）。
 
@@ -95,6 +97,7 @@ rebang skill install        # 把 Skill 装进本机的 Agent
 | `search <关键词> [--days N] [--source key] [--sort latest] [-n N]` | 搜索，非会员只能搜当天 |
 | `summary <item_key>` | 条目的 AI 总结；item_key 来自 `list`、`search` 的 JSON |
 | `following` | 我的关注（需登录） |
+| `monitor plans` / `monitor hits [--plan <ID>] [--unread] [-n N]` | 内容监控的计划与命中内容（需登录，只读） |
 | `open <链接或序号> [--node/--tab …] [--print] [--mobile]` | 用浏览器打开 |
 | `auth login \| logout \| status` | 登录、退出、查看状态 |
 | `account` | 账号与会员状态 |
@@ -119,6 +122,13 @@ rebang list --tab weibo -n 10 | jq -r '.items[] | "\(.rank). \(.title)"'
 key=$(rebang list --tab zhihu -n 1 -o json | jq -r '.items[0].item_key')
 rebang summary "$key"           # 可读文本
 rebang summary "$key" -o json   # {"summary_short": "...", "detail": {...}}
+```
+
+定时拉取内容监控的新命中（只读，不会标为已读），例如交给 Agent 每小时汇总一次：
+
+```bash
+rebang monitor plans -o json                       # 计划、关键词、状态与未读数
+rebang monitor hits --unread -n 50 -o json | jq -r '.items[] | "\(.title) \(.url)"'
 ```
 
 ### 错误与退出码

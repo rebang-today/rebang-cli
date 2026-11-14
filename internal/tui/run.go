@@ -43,6 +43,7 @@ func Run(a *cli.App) error {
 		Open:       a.OpenURL,
 		Copy:       clipboard.WriteAll,
 		Now:        a.Now,
+		Web:        a.Config.Web(),
 	}
 	progOpts := []tea.ProgramOption{tea.WithAltScreen(), tea.WithMouseAllMotion()}
 	if a.StdoutTTY {

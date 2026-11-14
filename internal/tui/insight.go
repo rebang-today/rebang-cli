@@ -280,7 +280,7 @@ func (m *model) detailKey(key string) tea.Cmd {
 		m.clamp()
 		return nil
 	case "enter":
-		return m.openURL(m.det.it.url)
+		return m.openItem(m.det.it)
 	case "up", "k":
 		m.det.off--
 	case "down", "j":
@@ -333,6 +333,10 @@ func (m *model) detailContent(w int) []string {
 	if it.desc != "" {
 		out = append(out, "")
 		add(summary.Line{Kind: summary.Para, Text: it.desc})
+	}
+	if ml := matchLines(it); len(ml) > 0 {
+		out = append(out, "")
+		add(ml...)
 	}
 	out = append(out, "")
 	add(summary.Line{Kind: summary.Heading, Text: "AI 总结"})

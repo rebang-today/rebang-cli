@@ -78,6 +78,18 @@ rebang account        # 账号与会员状态：is_member、member_expires_at
 rebang following      # 我的关注：nodes[] 与 tabs[]（需登录）
 ```
 
+### 内容监控（需登录，只读）
+
+用户在网站上创建的监控计划会收集命中关键词的内容。命令行只读取，不会标为已读；创建、修改计划请让用户到网站操作。
+
+```bash
+rebang monitor plans -o json                 # unread_all 与 plans[]：id、name、keywords、status（active/paused/membership_expired）、unread_count
+rebang monitor hits --unread -o json         # 定时拉取未读命中
+rebang monitor hits --plan <ID> -n 50 -o json
+```
+
+hits 的 JSON：`items[]` 含 `item_key`、`title`、`source_name`、`url`、`matched_at`、`is_read`、`matches[]`（`plan_name`、`matched_keywords`），`has_more` 表示还有更多（`-n` 最大 100）。需要 AI 总结时用 `item_key` 调用 `summary`。
+
 凭证可以通过环境变量 `REBANG_TOKEN` 注入。不要读取、打印或保存凭证文件内容。
 
 ## 其他

@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -116,6 +119,19 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte(`{"code":200,"msg":"ok","data":{"summary_short":"一句**话**总结","detail":{"quotes":["旧"],"reactions":{"mood":"多数支持","voices":[{"by":"网友甲","text":"不错","quote":"原话"}]},"points":["要点**一**"]},"keywords":["k"],"debug":{"model":"m"}}}`))
 		default:
 			fail(404, 1003, "record not found")
+		}
+	case "/v1/monitoring/plans", "/v1/monitoring/unread-counts", "/v1/monitoring/hits":
+		if !authed {
+			fail(401, 1004, "unauthorized")
+			return
+		}
+		switch r.URL.Path {
+		case "/v1/monitoring/plans":
+			ok([]map[string]any{{"id": 7, "name": "英伟达", "keywords": []string{"英伟达", "NVIDIA"}, "status": "active"}, {"id": 3, "name": "苹果", "keywords": []string{"苹果"}, "status": "paused"}})
+		case "/v1/monitoring/unread-counts":
+			ok(map[string]any{"all": 12, "plans": []map[string]any{{"plan_id": 7, "unread_count": 3}}})
+		default:
+			ok(fakeHits(r.URL.Query()))
 		}
 	case "/v1/cli/auth/device/code":
 		var body map[string]string
@@ -497,4 +513,39 @@ func TestNoArgsWithoutTTYPrintsHelp(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "search") {
 		t.Fatal(out)
 	}
+}
+
+// fakeHits 模拟 45 条命中内容：偶数编号属于计划 7，编号能被 3 整除的已读；cursor 是偏移量。
+func fakeHits(q url.Values) map[string]any {
+	var all []map[string]any
+	for i := 0; i < 45; i++ {
+		plan, name := int64(3), "苹果"
+		if i%2 == 0 {
+			plan, name = 7, "英伟达"
+		}
+		read := i%3 == 0
+		if q.Get("plan_id") != "" && q.Get("plan_id") != strconv.FormatInt(plan, 10) {
+			continue
+		}
+		if q.Get("read_status") == "unread" && read {
+			continue
+		}
+		all = append(all, map[string]any{
+			"item_key": fmt.Sprintf("%032x", i), "title": fmt.Sprintf("命中%02d", i), "source_key": "weibo", "source_name": "微博",
+			"www_url": fmt.Sprintf("https://example.com/h%d", i), "mobile_url": fmt.Sprintf("https://m.example.com/h%d", i),
+			"matched_at": 1763000000 - i*60, "item_created_at": 1762990000, "is_read": read,
+			"plan_matches": []map[string]any{{"plan_id": plan, "plan_name": name, "keywords": []string{name}, "matched_keywords": []string{name}}},
+		})
+	}
+	size, _ := strconv.Atoi(q.Get("page_size"))
+	off, _ := strconv.Atoi(q.Get("cursor"))
+	if size < 1 || size > 30 {
+		return map[string]any{"error": "bad page_size"}
+	}
+	end := min(off+size, len(all))
+	next := ""
+	if end < len(all) {
+		next = strconv.Itoa(end)
+	}
+	return map[string]any{"items": all[off:end], "next_cursor": next, "has_more": next != "", "revision_at": 1, "revision_id": 1, "new_count": 0}
 }

@@ -43,6 +43,8 @@ type Options struct {
 	Pointer io.Writer
 	// StatePath 是位置记忆文件的路径，为空时不读写。
 	StatePath string
+	// Web 是网站地址，用于提示去网站创建监控计划。
+	Web string
 }
 
 type focus int
@@ -57,6 +59,11 @@ type row struct {
 	title, url, mobile, meta, desc string
 	// key 是条目的 item_key，用于查询 AI 总结；src、when、heat 用于预览与详情的来源、时间、热度。
 	key, src, when, heat string
+	// 内容监控的命中内容（D-27）：mon 为 true；unread 为未读；match 是命中词；plans 是命中的计划。
+	mon    bool
+	unread bool
+	match  string
+	plans  []api.MonitorPlanMatch
 }
 
 type model struct {
@@ -125,6 +132,9 @@ type model struct {
 	insights   map[string]*insightEntry
 	previewOff bool
 	det        *detailState
+
+	// mon 是内容监控的数据与分页状态（D-27）。
+	mon monitorState
 
 	// pointerOn 表示已把鼠标指针切换为小手。
 	pointerOn bool
@@ -210,6 +220,7 @@ func newModel(opt Options) *model {
 		shortSeen:   map[string]bool{},
 		insights:    map[string]*insightEntry{},
 		previewOff:  mem.Preview != nil && !*mem.Preview,
+		mon:         monitorState{unreadOnly: mem.MonitorUnread != nil && *mem.MonitorUnread},
 		data:        map[int64]*menuData{},
 		menuLoading: map[int64]bool{},
 		menuErrs:    map[int64]string{},
@@ -333,6 +344,8 @@ func (m *model) refresh() tea.Cmd {
 	switch {
 	case m.searchQ != "":
 		return m.runSearch(m.searchQ)
+	case m.inMonitor():
+		return m.loadMonitor(false)
 	case m.target.key() != "||":
 		return m.loadList(m.target)
 	}
@@ -360,6 +373,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	next, cmd := m.update(msg)
+	if more := m.maybeMore(); more != nil {
+		cmd = tea.Batch(cmd, more)
+	}
 	if sig := m.posSignature(); sig != m.posSig {
 		// 启动后第一次得到位置只是恢复记忆，不必写入。
 		if m.posSig != "" {
@@ -448,11 +464,16 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			msg.data = &menuData{}
 		}
 		m.data[msg.id] = cleanMenuData(msg.data)
+		var unread tea.Cmd
+		if msg.id == followMenuID && m.hasMonitorSource(m.data[msg.id]) {
+			// 左栏“内容监控”后显示总未读数。
+			unread = m.loadMonitorUnread()
+		}
 		if mn, ok := m.curMenu(); ok && mn.ID == msg.id {
 			m.restorePos()
-			return m, m.loadCurrent()
+			return m, tea.Batch(m.loadCurrent(), unread)
 		}
-		return m, nil
+		return m, unread
 	case debounceMsg:
 		if msg.seq != m.debSeq || !m.debPending {
 			return m, nil
@@ -523,6 +544,13 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case insightMsg:
 		m.onInsight(msg)
+		return m, nil
+	case monitorMsg:
+		return m, m.onMonitor(msg)
+	case monitorMoreMsg:
+		return m, m.onMonitorMore(msg)
+	case monitorUnreadMsg:
+		m.onMonitorUnread(msg)
 		return m, nil
 	}
 	if m.searching {
@@ -673,6 +701,14 @@ func (m *model) curSubs() []subTab {
 	if m.searchQ != "" {
 		return nil
 	}
+	return m.sourceSubs()
+}
+
+// sourceSubs 返回当前来源的子榜单；内容监控的子榜单是“全部”与各个计划。
+func (m *model) sourceSubs() []subTab {
+	if s := m.curSource(); s.monitoring() {
+		return m.monitorSubs()
+	}
 	return m.curSource().subs()
 }
 
@@ -731,6 +767,9 @@ func (m *model) posSignature() string {
 	sig := itoa(mn.ID) + "|" + itoa(int64(len(m.srcMem))) + "|" + itoa(int64(len(m.subMem)))
 	if m.previewOff {
 		sig += "|nopreview"
+	}
+	if m.mon.unreadOnly {
+		sig += "|unread"
 	}
 	if k, ok := m.srcMem[mn.ID]; ok {
 		sig += "|" + k
@@ -831,11 +870,9 @@ func (m *model) loadCurrent() tea.Cmd {
 	m.debSeq++
 	m.debPending = false
 	src := m.curSource()
-	if src.unsupported() {
-		// 内容监控走网站自己的接口，公开的 /v1 榜单接口取不到，直接提示而不发请求。
-		m.clearList()
-		m.listNotice = monitoringNotice
-		return nil
+	if src.monitoring() {
+		m.searchQ = ""
+		return m.loadMonitor(false)
 	}
 	t, ok := src.target(m.subIdx)
 	if !ok {
@@ -893,7 +930,7 @@ func (m *model) selectSource(i int) tea.Cmd {
 
 // setSub 切换到第 i 个子榜单并立即加载。
 func (m *model) setSub(i int) tea.Cmd {
-	subs := m.curSource().subs()
+	subs := m.sourceSubs()
 	if len(subs) == 0 {
 		return nil
 	}
@@ -1035,6 +1072,8 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 		return m.openDetail()
 	case "p":
 		m.togglePreview()
+	case "u":
+		return m.toggleUnread()
 	case "home", "g":
 		return m.move(-1 << 20)
 	case "end", "G":
@@ -1140,7 +1179,16 @@ func (m *model) selected() (row, bool) {
 
 func (m *model) openSelected() tea.Cmd {
 	it, _ := m.selected()
-	return m.openURL(it.url)
+	return m.openItem(it)
+}
+
+// openItem 用浏览器打开条目；内容监控的未读命中同时标为已读（不等待、不阻塞打开）。
+func (m *model) openItem(it row) tea.Cmd {
+	open := m.openURL(it.url)
+	if it.url == "" {
+		return open
+	}
+	return tea.Batch(open, m.markRead(it))
 }
 
 func (m *model) openURL(u string) tea.Cmd {

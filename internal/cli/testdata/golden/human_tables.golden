@@ -49,6 +49,7 @@ $ rebang --help
   search       搜索热榜条目
   summary      查看条目的 AI 总结
   following    我的关注（需登录）
+  monitor      内容监控：查看计划与命中内容（需登录）
   open         用浏览器打开条目
 
 账号：
