@@ -180,6 +180,10 @@ func key(t *testing.T, m *model, keys ...string) {
 			msg = tea.KeyMsg{Type: tea.KeyLeft}
 		case "right":
 			msg = tea.KeyMsg{Type: tea.KeyRight}
+		case "shift+up":
+			msg = tea.KeyMsg{Type: tea.KeyShiftUp}
+		case "shift+down":
+			msg = tea.KeyMsg{Type: tea.KeyShiftDown}
 		default:
 			msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)}
 		}
@@ -915,5 +919,94 @@ func TestPointerShape(t *testing.T) {
 	move(m.leftWidth(), 3) // 分隔线
 	if out.String() != pointerHand+pointerReset {
 		t.Fatalf("分类可点、分隔线不可点，got %q", out.String())
+	}
+}
+
+// threeSources 在综合菜单里加第三个来源，便于测试连续切换与停在末尾。
+func threeSources() *fakeSource {
+	f := newFake()
+	f.data[1].tabs = append(f.data[1].tabs, api.Tab{Key: "douyin", Name: "抖音"})
+	f.lists["|douyin|"] = []cli.ListItem{{Title: "抖音第一", URL: "https://example.com/d1"}}
+	return f
+}
+
+func TestSwitchSourceFromList(t *testing.T) {
+	f := threeSources()
+	m := start(t, f, Options{})
+	key(t, m, "tab")
+	if m.focus != focusList {
+		t.Fatal("应在榜单焦点")
+	}
+	// 首个来源上按 K 停住，不循环、不请求。
+	n := len(f.listCalls)
+	key(t, m, "K")
+	if m.srcCur != 0 || m.debPending || len(f.listCalls) != n {
+		t.Fatalf("第一个来源上应停住：cur=%d calls=%v", m.srcCur, f.listCalls[n:])
+	}
+	// J 与 shift+↓ 连续切换，左栏同步移动，焦点留在榜单，防抖后只请求一次。
+	key(t, m, "J", "shift+down")
+	if m.srcCur != 2 || m.focus != focusList || len(f.listCalls) != n {
+		t.Fatalf("应移到第三个来源且尚未请求：cur=%d focus=%v calls=%v", m.srcCur, m.focus, f.listCalls[n:])
+	}
+	settle(t, m)
+	if len(f.listCalls) != n+1 || f.listCalls[n] != "|douyin|" || m.items[0].title != "抖音第一" || m.focus != focusList {
+		t.Fatalf("防抖后应只加载最后停下的来源：%v focus=%v", f.listCalls[n:], m.focus)
+	}
+	// 最后一个来源上按 J 停住。
+	n = len(f.listCalls)
+	key(t, m, "J", "shift+down")
+	if m.srcCur != 2 || m.debPending || len(f.listCalls) != n {
+		t.Fatalf("最后一个来源上应停住：cur=%d", m.srcCur)
+	}
+	// K 与 shift+↑ 往回切换。
+	key(t, m, "shift+up")
+	settle(t, m)
+	if m.srcCur != 1 || m.target.tab != "weibo" || m.focus != focusList {
+		t.Fatalf("shift+↑ 应切到上一个来源：cur=%d target=%+v", m.srcCur, m.target)
+	}
+	key(t, m, "K")
+	settle(t, m)
+	if m.srcCur != 0 || m.target.tab != "zhihu" {
+		t.Fatalf("K 应切到上一个来源：cur=%d", m.srcCur)
+	}
+	if s := golden.StripANSI(m.statusLine()); !strings.Contains(s, "J/K 换来源") {
+		t.Fatalf("宽屏榜单焦点应提示 J/K 换来源\n%s", s)
+	}
+
+	// 左栏焦点下与 ↑↓ 相同。
+	key(t, m, "tab")
+	key(t, m, "J")
+	if m.srcCur != 1 || m.focus != focusTree || !m.debPending {
+		t.Fatalf("左栏 J 应与 ↓ 相同：cur=%d focus=%v", m.srcCur, m.focus)
+	}
+	settle(t, m)
+	key(t, m, "shift+up")
+	if m.srcCur != 0 || m.focus != focusTree {
+		t.Fatalf("左栏 shift+↑ 应与 ↑ 相同：cur=%d", m.srcCur)
+	}
+}
+
+func TestSwitchSourceNarrow(t *testing.T) {
+	f := threeSources()
+	m := start(t, f, Options{})
+	m.Update(tea.WindowSizeMsg{Width: 48, Height: 12})
+	if m.wide() || m.picking() {
+		t.Fatal("应为单栏榜单")
+	}
+	key(t, m, "J")
+	if m.picking() || m.srcCur != 1 {
+		t.Fatalf("单栏 J 不应打开来源列表：cur=%d", m.srcCur)
+	}
+	if v := plainView(m); !strings.Contains(strings.Split(v, "\n")[1], "微博") {
+		t.Fatalf("标题行应显示新的来源名\n%s", v)
+	}
+	settle(t, m)
+	if m.target.tab != "weibo" || m.items[0].title != "微博热搜" {
+		t.Fatalf("应加载微博：%+v", m.target)
+	}
+	// 来源列表里 J/K 只移动选择。
+	key(t, m, "tab", "J")
+	if !m.picking() || m.srcCur != 2 {
+		t.Fatalf("来源列表中 J 应移动选择：cur=%d", m.srcCur)
 	}
 }

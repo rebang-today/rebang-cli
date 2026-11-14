@@ -1022,6 +1022,11 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 		return m.move(-1)
 	case "down", "j":
 		return m.move(1)
+	case "K", "shift+up":
+		// 在榜单里直接换来源：左栏光标同步移动，焦点不变，停下 debounce 后再加载。
+		return m.moveSource(-1)
+	case "J", "shift+down":
+		return m.moveSource(1)
 	case "pgup", "ctrl+b":
 		return m.move(-m.paneHeight())
 	case "pgdown", "ctrl+f":
@@ -1081,9 +1086,9 @@ func (m *model) pickerKey(key string) (cmd tea.Cmd, done bool) {
 		m.clamp()
 	}
 	switch key {
-	case "up", "k":
+	case "up", "k", "K", "shift+up":
 		step(-1)
-	case "down", "j":
+	case "down", "j", "J", "shift+down":
 		step(1)
 	case "pgup", "ctrl+b":
 		step(-m.bodyHeight())
