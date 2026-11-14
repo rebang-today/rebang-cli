@@ -56,7 +56,7 @@ rebang                      # 进入交互界面
 rebang auth login           # 浏览器登录（SSH 等无桌面环境加 --no-browser）
 rebang list --tab zhihu     # 知乎热榜
 rebang search 大模型        # 搜索
-rebang summary <item_key>   # 条目的 AI 总结（需登录，item_key 来自 list -o json）
+rebang summary <item_key>   # 条目的 AI 总结（item_key 来自 list -o json）
 rebang skill install        # 把 Skill 装进本机的 Agent
 ```
 
@@ -81,7 +81,7 @@ rebang skill install        # 把 Skill 装进本机的 Agent
 
 顶部是分类栏，最前面的“订阅”列出登录用户订阅的榜单（其中的内容监控暂需在网站查看）；左栏是当前分类的榜单，右栏上方是子榜单条（只有一个子榜单时不显示）。标题等外部文本中的不可见字符会被去掉，`-o json` 保留原文。支持鼠标：点击分类、榜单、子榜单切换，点击条目选中、双击打开，滚轮滚动，支持的终端（kitty、Ghostty、foot 等）中悬停可点击元素时指针变为小手。窗口较窄（56 列以下）时切换为单栏，默认显示榜单，按 `tab` 打开来源列表；最小尺寸 40×10，更小时提示放大窗口；主题跟随终端深浅色，配色以网站蓝为主（深色终端用更柔和的蓝），前 3 名序号为橙色。上次浏览的位置保存在配置目录的 `tui-state.json`，下次启动自动恢复。
 
-登录后，有 AI 总结的条目标题前显示 `✦`；双栏且窗口足够高时，右栏底部预览选中条目的来源、时间、热度与一句话总结（没有总结时显示描述），`p` 开关并记住；按空格打开全屏详情，查看要点、经过、观点与网友怎么看。榜单按配置的间隔自动刷新（默认 5 分钟）。
+有 AI 总结的条目标题前显示 `✦`；双栏且窗口足够高时，右栏底部预览选中条目的来源、时间、热度与一句话总结（没有总结时显示描述），`p` 开关并记住；按空格打开全屏详情，查看要点、经过、观点与网友怎么看。榜单按配置的间隔自动刷新（默认 5 分钟）。
 
 ## 命令
 
@@ -92,7 +92,7 @@ rebang skill install        # 把 Skill 装进本机的 Agent
 | `nodes --menu <…>` / `nodes --tab <key>` | 节点（榜单）列表 |
 | `list --node <id>` / `list --tab <key> [--sub-tab <key>]` | 榜单，`-n` 指定条数（默认 30） |
 | `search <关键词> [--days N] [--source key] [--sort latest] [-n N]` | 搜索，非会员只能搜当天 |
-| `summary <item_key>` | 条目的 AI 总结（需登录）；item_key 来自 `list`、`search` 的 JSON |
+| `summary <item_key>` | 条目的 AI 总结；item_key 来自 `list`、`search` 的 JSON |
 | `following` | 我的关注（需登录） |
 | `open <链接或序号> [--node/--tab …] [--print] [--mobile]` | 用浏览器打开 |
 | `auth login \| logout \| status` | 登录、退出、查看状态 |

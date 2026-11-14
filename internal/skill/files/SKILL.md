@@ -57,7 +57,7 @@ JSON：`total`、`has_more`、`items[]`（`title`、`url`、`snippet`、`source`
 
 ## AI 总结
 
-部分条目有 AI 生成的总结（需登录）。先从 `list` 或 `search` 的 JSON 中取 `item_key`，再查询：
+部分条目有 AI 生成的总结，不需要登录。先从 `list` 或 `search` 的 JSON 中取 `item_key`，再查询：
 
 ```bash
 rebang list --tab zhihu -n 10 -o json          # 取 items[].item_key

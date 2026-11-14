@@ -106,7 +106,8 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		ok(map[string]any{"tab_info": []map[string]any{}})
 	case "/v1/item/insight":
-		if !authed {
+		// 可选登录：不带令牌可以调用，带了失效的令牌返回 401。
+		if !authed && r.Header.Get("Authorization") != "" {
 			fail(401, 1004, "unauthorized")
 			return
 		}

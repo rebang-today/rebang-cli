@@ -65,11 +65,21 @@ func TestInsightMarkers(t *testing.T) {
 		t.Fatalf("已查询过的条目不应重复请求：%v", f.shortsCalls)
 	}
 
-	// 未登录：不发批量请求，不显示标记。
+	// 未登录：接口不要求登录，照常查询并显示标记。
 	f2 := insightFake()
 	m2 := start(t, f2, Options{Now: fixedNow})
-	if len(f2.shortsCalls) != 0 || strings.Contains(plainView(m2), insightMark) {
-		t.Fatalf("未登录不应查询：%v", f2.shortsCalls)
+	if len(f2.shortsCalls) != 1 || !strings.Contains(plainView(m2), insightMark) {
+		t.Fatalf("未登录也应查询：%v", f2.shortsCalls)
+	}
+
+	// 登录失效后不再带着失效令牌请求。
+	f4 := insightFake()
+	f4.shortsErr = errs.Unauthorized("")
+	m4 := start(t, f4, Options{LoggedIn: true, Now: fixedNow})
+	f4.shortsErr = nil
+	key(t, m4, "tab", "j")
+	if !m4.expired || len(f4.shortsCalls) != 1 {
+		t.Fatalf("401 后不应再请求：%v %v", m4.expired, f4.shortsCalls)
 	}
 
 	// 批量查询失败静默，不提示错误。
@@ -224,12 +234,12 @@ func TestDetailStates(t *testing.T) {
 		t.Fatalf("没有总结时应提示\n%s", v)
 	}
 
-	// 未登录：提示登录，不发请求。
+	// 未登录：接口不要求登录，照常请求并显示。
 	f2 := insightFake()
 	m2 := start(t, f2, Options{Now: fixedNow})
 	key(t, m2, " ")
-	if v := plainView(m2); !strings.Contains(v, "登录后可查看 AI 总结（rebang auth login）") || len(f2.insightCalls) != 0 {
-		t.Fatalf("未登录应提示登录\n%s", v)
+	if v := plainView(m2); !strings.Contains(v, "一句话总结第一条") || strings.Contains(v, "登录后") || len(f2.insightCalls) != 1 {
+		t.Fatalf("未登录也应显示 AI 总结：%v\n%s", f2.insightCalls, v)
 	}
 
 	// 其他错误：一行错误信息。
@@ -252,7 +262,7 @@ func TestDetailStates(t *testing.T) {
 	f4.insightErr = errs.Unauthorized("")
 	m4 := start(t, f4, Options{LoggedIn: true, Now: fixedNow})
 	key(t, m4, " ")
-	if v := plainView(m4); !m4.expired || !strings.Contains(v, "登录后可查看 AI 总结") {
+	if v := plainView(m4); !m4.expired || !strings.Contains(v, "登录已失效，退出后运行 rebang auth login") {
 		t.Fatalf("401 应提示重新登录\n%s", v)
 	}
 }

@@ -66,10 +66,11 @@ func (m *model) detailLoading() bool {
 	return e != nil && e.loading
 }
 
-// canInsight 表示可以查询 AI 总结（已登录且登录未失效）。
-func (m *model) canInsight() bool { return m.loggedIn && !m.expired }
+// canInsight 表示可以查询 AI 总结。接口不要求登录；登录失效（服务端返回 401）后不再请求，
+// 避免带着失效的令牌反复失败。
+func (m *model) canInsight() bool { return !m.expired }
 
-// loadShorts 批量查询本页还没查过的 item_key；未登录时不请求。
+// loadShorts 批量查询本页还没查过的 item_key。
 func (m *model) loadShorts() tea.Cmd {
 	if !m.canInsight() {
 		return nil
@@ -343,10 +344,12 @@ func (m *model) detailContent(w int) []string {
 	}
 	e := m.insights[it.key]
 	switch {
-	case !m.canInsight():
-		state("登录后可查看 AI 总结（rebang auth login）", styleDim)
 	case it.key == "":
 		state("暂无 AI 总结", styleDim)
+	case e == nil && !m.canInsight():
+		state("登录已失效，退出后运行 rebang auth login", styleDim)
+	case e != nil && e.err != nil && isAuth(e.err):
+		state("登录已失效，退出后运行 rebang auth login", styleDim)
 	case e == nil || e.loading:
 		state(m.spinner()+" 加载中…", styleDim)
 	case errors.Is(e.err, errNoSummary):

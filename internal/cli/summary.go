@@ -26,18 +26,15 @@ const summaryMaxWidth = 100
 func newSummaryCmd(a *App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "summary <item_key>",
-		Short: "查看条目的 AI 总结（需登录）",
+		Short: "查看条目的 AI 总结",
 		Long: "查看条目的 AI 总结：一句话总结，以及要点、经过、观点、网友怎么看等分区。\n\n" +
-			"item_key 来自 rebang list 或 rebang search 的 JSON 输出（-o json）。不是所有条目都有总结，没有时退出码为 8。",
+			"item_key 来自 rebang list 或 rebang search 的 JSON 输出（-o json）。不需要登录。不是所有条目都有总结，没有时退出码为 8。",
 		Example: "  rebang list --node <节点ID> -o json   # 取 item_key\n  rebang summary <item_key>\n  rebang summary <item_key> -o json",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			key := strings.TrimSpace(args[0])
 			if utf8.RuneCountInString(key) != 32 {
 				return errs.New(errs.ExitUsage, errs.CodeInvalidArgument, "item_key 应为 32 位", "从 rebang list -o json 或 rebang search -o json 的 item_key 字段获取")
-			}
-			if err := requireLogin(); err != nil {
-				return err
 			}
 			in, err := a.Client().Insight(cmd.Context(), key)
 			if api.IsNotFound(err) {

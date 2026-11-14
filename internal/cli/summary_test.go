@@ -64,10 +64,13 @@ func TestSummaryExitCodes(t *testing.T) {
 	h := newHarness(t)
 	other := strings.Repeat("f", 32)
 
-	// 未登录：不发请求，退出码 3。
-	_, stderr, code := h.run(false, "summary", summaryKey)
-	if code != errs.ExitAuth || len(h.api.requests) != 0 {
+	// 未登录也能查询，请求不带令牌。
+	out, stderr, code := h.run(false, "summary", summaryKey)
+	if code != 0 || !strings.Contains(out, "summary_short") {
 		t.Fatal(code, stderr)
+	}
+	if r := h.api.requests[len(h.api.requests)-1]; r.Header.Get("Authorization") != "" {
+		t.Fatal("未登录不应带令牌")
 	}
 
 	// 参数错误。
