@@ -161,3 +161,12 @@ func TestTooSmallHintAndRecover(t *testing.T) {
 		t.Fatal("窗口太小时 q 仍应退出")
 	}
 }
+
+func TestThemeColorsMatchWebsite(t *testing.T) {
+	if colorAccent.Light != "#2C5CF5" || colorAccent.Dark != "#4D7EF6" {
+		t.Fatalf("强调色应为网站蓝：%+v", colorAccent)
+	}
+	if styleRankTop.GetForeground() != lipgloss.TerminalColor(colorRankTop) || colorRankTop.Dark != "#F7670D" {
+		t.Fatal("前 3 名序号应单独使用网站橙色，不跟随强调色")
+	}
+}

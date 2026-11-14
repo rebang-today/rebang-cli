@@ -268,7 +268,7 @@ func styleCell(t ui.Theme, k Kind, raw, padded string) string {
 	switch k {
 	case KindRank:
 		if n := strings.TrimSpace(raw); n == "1" || n == "2" || n == "3" {
-			return t.Code.Render(padded)
+			return t.RankTop.Render(padded)
 		}
 		return t.Dim.Render(padded)
 	case KindDim:

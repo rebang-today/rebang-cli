@@ -7,14 +7,17 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// 颜色随终端深浅色自动切换（D-24）。
+// 颜色随终端深浅色自动切换（D-24）。主题色与网站一致：强调色为网站的蓝色（--primary），
+// 只有前 3 名序号用网站的橙色（--rank-top）。
 var (
-	colorAccent = lipgloss.AdaptiveColor{Light: "#C2410C", Dark: "#FB923C"}
+	colorAccent = lipgloss.AdaptiveColor{Light: "#2C5CF5", Dark: "#4D7EF6"}
 	colorDim    = lipgloss.AdaptiveColor{Light: "#6B7280", Dark: "#9CA3AF"}
 	colorError  = lipgloss.AdaptiveColor{Light: "#B91C1C", Dark: "#F87171"}
 	colorOK     = lipgloss.AdaptiveColor{Light: "#15803D", Dark: "#4ADE80"}
 	colorBar    = lipgloss.AdaptiveColor{Light: "#F3F4F6", Dark: "#1F2937"}
-	colorSelBg  = lipgloss.AdaptiveColor{Light: "#FED7AA", Dark: "#7C2D12"}
+	colorSelBg  = lipgloss.AdaptiveColor{Light: "#E0E8FE", Dark: "#1E2A5A"}
+	// 浅色背景上 #F7670D 对比度只有 3:1，改用略深的橙色。
+	colorRankTop = lipgloss.AdaptiveColor{Light: "#D9480F", Dark: "#F7670D"}
 
 	styleHeader   = lipgloss.NewStyle().Bold(true).Foreground(colorAccent)
 	styleDim      = lipgloss.NewStyle().Foreground(colorDim)
@@ -25,13 +28,13 @@ var (
 	styleError    = lipgloss.NewStyle().Foreground(colorError)
 	styleOK       = lipgloss.NewStyle().Foreground(colorOK)
 	styleRank     = lipgloss.NewStyle().Foreground(colorDim)
-	styleRankTop  = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+	styleRankTop  = lipgloss.NewStyle().Foreground(colorRankTop).Bold(true)
 	styleSepColor = lipgloss.NewStyle().Foreground(colorSep)
 
-	colorBrandBg   = lipgloss.AdaptiveColor{Light: "#C2410C", Dark: "#EA580C"}
+	colorBrandBg   = lipgloss.AdaptiveColor{Light: "#2C5CF5", Dark: "#2C5CF5"} // 白字对比度 5.3:1
 	colorHoverBg   = lipgloss.AdaptiveColor{Light: "#F3F4F6", Dark: "#262626"}
 	colorSep       = lipgloss.AdaptiveColor{Light: "#D1D5DB", Dark: "#374151"}
-	colorNoticeBg  = lipgloss.AdaptiveColor{Light: "#FFF7ED", Dark: "#431407"}
+	colorNoticeBg  = lipgloss.AdaptiveColor{Light: "#EEF2FF", Dark: "#172554"}
 	styleBrand     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).Background(colorBrandBg)
 	styleCrumb     = lipgloss.NewStyle().Bold(true)
 	styleMarker    = lipgloss.NewStyle().Foreground(colorAccent)
@@ -40,11 +43,11 @@ var (
 	styleKey       = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 	styleSource    = lipgloss.NewStyle().Foreground(colorAccent)
 	styleNotice    = lipgloss.NewStyle().Foreground(colorAccent).Background(colorNoticeBg)
-	// 菜单栏与子榜单条：当前项用品牌色底，其余为普通文字。
+	// 菜单栏与子榜单条：当前项用浅蓝底，其余为普通文字。
 	styleMenu   = lipgloss.NewStyle()
 	styleMenuOn = lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Background(colorTabBg)
 	styleTabOn  = lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Background(colorTabBg)
-	colorTabBg  = lipgloss.AdaptiveColor{Light: "#FFEDD5", Dark: "#431407"}
+	colorTabBg  = lipgloss.AdaptiveColor{Light: "#EEF2FF", Dark: "#172554"}
 
 	spinFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 )
@@ -335,7 +338,7 @@ func (m *model) bodyLines() []string {
 	return out
 }
 
-// marker 是行首的选中标记：焦点栏为橙色竖条，非焦点栏为灰色竖条。
+// marker 是行首的选中标记：焦点栏为蓝色竖条，非焦点栏为灰色竖条。
 func marker(selected, focused bool) string {
 	switch {
 	case selected && focused:

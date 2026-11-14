@@ -25,14 +25,15 @@ func ColorEnabled(isTTY bool) bool {
 	return os.Getenv("TERM") != "dumb"
 }
 
-// 与交互界面一致的配色。使用 256 色与终端基础色，深浅背景下都可读。
+// 与交互界面一致的配色（强调色为网站蓝，前 3 名序号为网站橙）。使用 256 色与终端基础色，深浅背景下都可读。
 const (
-	colorAccent = lipgloss.Color("166") // 橙
-	colorOK     = lipgloss.Color("2")
-	colorWarn   = lipgloss.Color("3")
-	colorErr    = lipgloss.Color("1")
-	colorDim    = lipgloss.Color("244")
-	colorBorder = lipgloss.Color("240")
+	colorAccent  = lipgloss.Color("33")  // 蓝，接近网站主题色 #2C5CF5，深浅背景都可读
+	colorRankTop = lipgloss.Color("202") // 橙，网站前 3 名序号的颜色 #F7670D
+	colorOK      = lipgloss.Color("2")
+	colorWarn    = lipgloss.Color("3")
+	colorErr     = lipgloss.Color("1")
+	colorDim     = lipgloss.Color("244")
+	colorBorder  = lipgloss.Color("240")
 )
 
 // Theme 是一组样式。零值不可用，用 New 创建。
@@ -49,6 +50,8 @@ type Theme struct {
 	Code    lipgloss.Style
 	Border  lipgloss.Style
 	TableHd lipgloss.Style
+	// RankTop 是表格中前 3 名序号的样式。
+	RankTop lipgloss.Style
 
 	r *lipgloss.Renderer
 }
@@ -63,8 +66,8 @@ func New(color bool) Theme {
 	}
 	s := r.NewStyle
 	t := Theme{Color: color, r: r}
-	t.Accent, t.Strong, t.OK, t.Warn, t.Err, t.Dim, t.Label, t.Code, t.Border, t.TableHd =
-		s(), s(), s(), s(), s(), s(), s(), s(), s(), s()
+	t.Accent, t.Strong, t.OK, t.Warn, t.Err, t.Dim, t.Label, t.Code, t.Border, t.TableHd, t.RankTop =
+		s(), s(), s(), s(), s(), s(), s(), s(), s(), s(), s()
 	if color {
 		t.Accent = s().Foreground(colorAccent)
 		t.Strong = s().Bold(true)
@@ -76,6 +79,7 @@ func New(color bool) Theme {
 		t.Code = s().Foreground(colorAccent).Bold(true)
 		t.Border = s().Foreground(colorBorder)
 		t.TableHd = s().Foreground(colorDim).Bold(true)
+		t.RankTop = s().Foreground(colorRankTop).Bold(true)
 	}
 	return t
 }

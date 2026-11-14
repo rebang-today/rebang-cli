@@ -167,3 +167,17 @@ func TestWriteErrorTheme(t *testing.T) {
 	WriteErrorTheme(&themed, e, ui.New(true))
 	golden.Assert(t, "error_color", golden.StripANSI(themed.String()))
 }
+
+func TestTableThemeColors(t *testing.T) {
+	cols := []Column{{Title: "#", Kind: KindRank}, {Title: "热度", Kind: KindAccent}}
+	s := RenderTableTheme(ui.New(true), cols, [][]string{{"1", "100万"}, {"4", "10万"}}, 80)
+	if !strings.Contains(s, "38;5;202m1") {
+		t.Fatalf("前 3 名序号应为橙色：%q", s)
+	}
+	if !strings.Contains(s, "38;5;33m100万") {
+		t.Fatalf("强调色应为蓝色：%q", s)
+	}
+	if strings.Contains(s, "38;5;166") {
+		t.Fatalf("不应再出现旧的橙色强调色：%q", s)
+	}
+}
