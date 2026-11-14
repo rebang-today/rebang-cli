@@ -11,13 +11,13 @@
 macOS / Linux：
 
 ```bash
-curl -fsSL https://rebang.today/cli/install.sh | sh
+curl -fsSL https://cli.rebang.today/install.sh | sh
 ```
 
 Windows（PowerShell）：
 
 ```powershell
-irm https://rebang.today/cli/install.ps1 | iex
+irm https://cli.rebang.today/install.ps1 | iex
 ```
 
 Homebrew（macOS）：
@@ -37,7 +37,7 @@ brew install rebang-today/tap/rebang
 检测到本机装有 Claude Code、Codex（`~/.claude`、`~/.codex`、`~/.agents`）时，安装脚本会询问是否同时安装 rebang Agent Skill，直接回车即安装；没有终端可询问时（CI 等）不安装。也可以用参数明确选择：
 
 ```bash
-curl -fsSL https://rebang.today/cli/install.sh | sh -s -- --with-skill   # 或 --no-skill
+curl -fsSL https://cli.rebang.today/install.sh | sh -s -- --with-skill   # 或 --no-skill
 ```
 
 安装后不需要登录即可使用热榜、搜索与 AI 总结；我的关注、内容监控等功能需要时再运行 `rebang auth login`。
@@ -191,8 +191,8 @@ Skill 内嵌在程序中，`rebang update` 升级后会自动同步已安装的 
 
 ```text
 请帮我安装今日热榜命令行 rebang，并把它的 Agent Skill 装到本机：
-1. 运行 curl -fsSL https://rebang.today/cli/install.sh | sh -s -- --with-skill
-   （Windows 用 PowerShell：$env:REBANG_INSTALL_SKILL=1; irm https://rebang.today/cli/install.ps1 | iex）
+1. 运行 curl -fsSL https://cli.rebang.today/install.sh | sh -s -- --with-skill
+   （Windows 用 PowerShell：$env:REBANG_INSTALL_SKILL=1; irm https://cli.rebang.today/install.ps1 | iex）
 2. 运行 rebang skill install，确认 Skill 已安装（rebang skill status）。
 3. 运行 rebang list --tab zhihu -n 5 -o json 验证可用，这一步不需要登录。
 不需要登录。以后用到我的关注、内容监控等功能时，再按需帮我登录。

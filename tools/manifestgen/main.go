@@ -1,6 +1,6 @@
 // Command manifestgen 在发版流水线中生成 manifest.json，不随程序发布。
 //
-//	go run ./tools/manifestgen -version 0.1.0 -base-url https://example.com/cli \
+//	go run ./tools/manifestgen -version 0.1.0 -base-url https://example.com \
 //	    -checksums dist/checksums.txt -o dist/manifest.json
 package main
 
@@ -20,7 +20,7 @@ func main() {
 	var checksums, out string
 	flag.StringVar(&p.Version, "version", "", "发布版本，可带 v 前缀")
 	flag.StringVar(&p.MinVersion, "min-version", "", "最低支持版本，留空表示不强制升级")
-	flag.StringVar(&p.BaseURL, "base-url", "", "CDN 上 cli 目录的地址")
+	flag.StringVar(&p.BaseURL, "base-url", "", "下载站地址，如 https://cli.rebang.today")
 	flag.StringVar(&p.NotesURL, "notes-url", "", "更新日志地址")
 	flag.StringVar(&checksums, "checksums", "dist/checksums.txt", "goreleaser 生成的 checksums.txt")
 	flag.StringVar(&out, "o", "dist/manifest.json", "输出文件")

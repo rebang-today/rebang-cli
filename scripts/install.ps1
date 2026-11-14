@@ -1,7 +1,7 @@
 # 今日热榜 CLI 安装脚本（Windows）
 #
-#   irm https://rebang.today/cli/install.ps1 | iex
-#   & ([scriptblock]::Create((irm https://rebang.today/cli/install.ps1))) --with-skill
+#   irm https://cli.rebang.today/install.ps1 | iex
+#   & ([scriptblock]::Create((irm https://cli.rebang.today/install.ps1))) --with-skill
 #
 # 参数：
 #   --with-skill        同时安装 Agent Skill，不询问
@@ -9,7 +9,7 @@
 #
 # 环境变量：
 #   REBANG_INSTALL_DIR  安装目录，默认 %LOCALAPPDATA%\Programs\rebang
-#   REBANG_CDN          下载地址，默认 https://rebang.today/cli
+#   REBANG_CDN          下载地址，默认 https://cli.rebang.today
 #   REBANG_VERSION      指定版本（如 0.1.0），默认最新版
 #   REBANG_INSTALL_SKILL  1 安装 Agent Skill、0 不安装；不设置时检测到 Agent 才询问
 $ErrorActionPreference = 'Stop'
@@ -47,7 +47,7 @@ function Install-Rebang([string[]]$opts) {
             default { throw "未知参数：$o（可用 --with-skill、--no-skill）" }
         }
     }
-    $cdn = if ($env:REBANG_CDN) { $env:REBANG_CDN.TrimEnd('/') } else { 'https://rebang.today/cli' }
+    $cdn = if ($env:REBANG_CDN) { $env:REBANG_CDN.TrimEnd('/') } else { 'https://cli.rebang.today' }
     $dir = if ($env:REBANG_INSTALL_DIR) { $env:REBANG_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Programs\rebang' }
 
     $arch = switch ($env:PROCESSOR_ARCHITECTURE) {

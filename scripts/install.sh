@@ -1,8 +1,8 @@
 #!/bin/sh
 # 今日热榜 CLI 安装脚本（macOS / Linux）
 #
-#   curl -fsSL https://rebang.today/cli/install.sh | sh
-#   curl -fsSL https://rebang.today/cli/install.sh | sh -s -- --with-skill
+#   curl -fsSL https://cli.rebang.today/install.sh | sh
+#   curl -fsSL https://cli.rebang.today/install.sh | sh -s -- --with-skill
 #
 # 参数：
 #   --with-skill        同时安装 Agent Skill，不询问
@@ -10,12 +10,12 @@
 #
 # 环境变量：
 #   REBANG_INSTALL_DIR  安装目录，默认 ~/.local/bin
-#   REBANG_CDN          下载地址，默认 https://rebang.today/cli
+#   REBANG_CDN          下载地址，默认 https://cli.rebang.today
 #   REBANG_VERSION      指定版本（如 0.1.0），默认最新版
 #   REBANG_INSTALL_SKILL  1 安装 Agent Skill、0 不安装；不设置时检测到 Agent 才询问
 set -eu
 
-CDN="${REBANG_CDN:-https://rebang.today/cli}"
+CDN="${REBANG_CDN:-https://cli.rebang.today}"
 CDN="${CDN%/}"
 INSTALL_DIR="${REBANG_INSTALL_DIR:-$HOME/.local/bin}"
 

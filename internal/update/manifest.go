@@ -13,7 +13,7 @@ import (
 	"github.com/rebang-today/rebang-cli/internal/errs"
 )
 
-// Manifest 是 CDN 上 cli/manifest.json 的结构。
+// Manifest 是 下载站（cli.rebang.today）根目录 manifest.json 的结构。
 type Manifest struct {
 	Version    string           `json:"version"`
 	MinVersion string           `json:"min_version"`

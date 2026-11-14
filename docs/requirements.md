@@ -112,16 +112,17 @@
   - JSON 输出（非终端或 `-o json`）共用同一个每天一次的检查缓存（`state.json`），缓存过期时联网检查一次，最多等 1.5 秒，失败静默；结果只通过 JSON 的 `_notice` 字段告知（见 D-63），不向标准错误输出提示。md、table 的非交互调用不检查。
   - 默认不静默替换程序，可通过 `auto_update` 开启。
   - 版本低于 `min_version` 时拒绝执行并提示升级（退出码 7）。
-- **D-51 版本信息文件**：自有 CDN 上的静态文件 `cli/manifest.json`，包含最新版本、`min_version`、各平台下载地址与 sha256。升级只读取这个文件；需要强制升级时手动修改 `min_version`。
+  - 版本检查与升级只访问下载站 `https://cli.rebang.today`（见 D-53）。
+- **D-51 版本信息文件**：下载站根目录的静态文件 `https://cli.rebang.today/manifest.json`，包含最新版本、`min_version`、各平台下载地址与 sha256。升级只读取这个文件；需要强制升级时手动修改 `min_version`。
 - **D-52 完整性校验**：下载后校验 sha256，并用 minisign 验证签名，公钥内置在程序中。
-- **D-53 分发渠道**：自有 CDN 为主（国内下载快），GitHub Releases 与 Homebrew tap（`rebang-today/homebrew-tap`）为辅。
+- **D-53 分发渠道**：独立下载域名 `https://cli.rebang.today` 为主（国内下载快），GitHub Releases 与 Homebrew tap（`rebang-today/homebrew-tap`）为辅。该域名直接绑定独立的 OSS Bucket `rebang-cli`（公共读），文件放在 Bucket 根目录，服务器不参与；以后可在前面接 CDN，地址不变。不使用 `rebang.today/cli` 与 `cdn.rebang.today`（后者经 rebang-static 回源并永久缓存，manifest 无法及时刷新）。缓存：`manifest.json`、`install.sh`、`install.ps1` 为 `max-age=60`；`v<版本>/` 下的安装包、签名与 `checksums.txt` 为 `public, max-age=31536000, immutable`。
 - **D-54 安装方式**：
-  - macOS/Linux：`curl -fsSL <官网>/cli/install.sh | sh`
-  - Windows：`irm <官网>/cli/install.ps1 | iex`
+  - macOS/Linux：`curl -fsSL https://cli.rebang.today/install.sh | sh`
+  - Windows：`irm https://cli.rebang.today/install.ps1 | iex`
   - macOS 另可 `brew install rebang-today/tap/rebang`
   - 不提供 npm 与 scoop。
   - 安装脚本按需询问是否同时安装 Agent Skill，最后只提示登录是可选的（见 D-65）。
-- **D-55 发版流水线**：推送 `v*` tag 触发 GitHub Actions，由 goreleaser 依次完成：构建、生成 sha256 与 minisign 签名、发布 GitHub Releases、更新 Homebrew tap、上传 CDN，**最后**写入 `manifest.json`。需要的 Secrets：仅限 `cli/` 目录写权限的 OSS 子账号密钥、minisign 私钥、tap 仓库写权限 token。
+- **D-55 发版流水线**：推送 `v*` tag 触发 GitHub Actions，由 goreleaser 依次完成：构建、生成 sha256 与 minisign 签名、发布 GitHub Releases、更新 Homebrew tap、上传到下载站 Bucket 根目录，**最后**写入 `manifest.json`。需要的 Secrets：仅限写入 Bucket `rebang-cli` 的 OSS 子账号密钥、minisign 私钥、tap 仓库写权限 token。
 - **D-56 版本号**：语义化版本，从 v0.1.0 开始。1.0 之前允许不兼容变更；1.0 之后命令名、参数、JSON 字段、退出码均视为稳定接口，不兼容变更必须升主版本。每个版本附带更新日志。
 
 ### Agent Skill
@@ -153,5 +154,4 @@
 
 ## 5. 待办与开放问题
 
-- 官网安装脚本与 `manifest.json` 的最终路径，在搭建 CDN 目录时确定。
 - 定时刷新的默认间隔，在交互界面实现时确定。

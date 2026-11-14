@@ -18,7 +18,7 @@ import (
 const (
 	DefaultAPIBase         = "https://api.rebang.today"
 	DefaultWebBase         = "https://rebang.today"
-	DefaultManifestURL     = "https://rebang.today/cli/manifest.json"
+	DefaultManifestURL     = "https://cli.rebang.today/manifest.json"
 	DefaultRefreshInterval = 5 * time.Minute
 	FileName               = "config.toml"
 )

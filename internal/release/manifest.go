@@ -1,4 +1,4 @@
-// Package release 生成 CDN 上的 cli/manifest.json（D-51、D-55）。
+// Package release 生成下载站（cli.rebang.today）根目录的 manifest.json（D-51、D-55）。
 package release
 
 import (
@@ -20,7 +20,7 @@ var archiveRe = regexp.MustCompile(`^rebang_(.+)_(darwin|linux|windows)_(amd64|a
 type Params struct {
 	Version    string // 不带 v 前缀
 	MinVersion string
-	// BaseURL 是 CDN 上 cli 目录的地址，安装包位于 <BaseURL>/v<Version>/。
+	// BaseURL 是下载站地址（如 https://cli.rebang.today），安装包位于 <BaseURL>/v<Version>/。
 	BaseURL  string
 	NotesURL string
 	Now      time.Time

@@ -43,7 +43,7 @@ func newUpdateCmd(a *App) *cobra.Command {
 		Short: "升级到最新版本",
 		Long: `升级到最新版本。
 
-从官方 CDN 读取版本信息，下载对应平台的安装包，校验 sha256 与 minisign 签名后替换当前程序，
+从官方下载站（cli.rebang.today）读取版本信息，下载对应平台的安装包，校验 sha256 与 minisign 签名后替换当前程序，
 并同步已安装的 Agent Skill。通过 Homebrew 安装时请使用 brew upgrade rebang。`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {

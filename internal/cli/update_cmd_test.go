@@ -71,7 +71,7 @@ func TestUpdateEndToEnd(t *testing.T) {
 	var cdn *httptest.Server
 	cdn = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/cli/manifest.json":
+		case "/manifest.json":
 			json.NewEncoder(w).Encode(update.Manifest{Version: "0.2.0", MinVersion: "0.1.0", Platforms: map[string]update.Asset{
 				buildinfo.Platform(): {URL: cdn.URL + "/a.tar.gz", SHA256: hex.EncodeToString(sum[:]), SignatureURL: cdn.URL + "/a.tar.gz.minisig"},
 			}})
@@ -82,7 +82,7 @@ func TestUpdateEndToEnd(t *testing.T) {
 		}
 	}))
 	defer cdn.Close()
-	t.Setenv("REBANG_MANIFEST_URL", cdn.URL+"/cli/manifest.json")
+	t.Setenv("REBANG_MANIFEST_URL", cdn.URL+"/manifest.json")
 
 	exe := filepath.Join(t.TempDir(), "rebang")
 	os.WriteFile(exe, []byte("OLD"), 0o755)
