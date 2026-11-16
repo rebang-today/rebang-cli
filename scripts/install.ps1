@@ -44,7 +44,7 @@ function Install-Rebang([string[]]$opts) {
         switch ($o) {
             '--with-skill' { $skillChoice = '1' }
             '--no-skill' { $skillChoice = '0' }
-            default { throw "未知参数：$o（可用 --with-skill、--no-skill）" }
+            default { throw "未知参数：${o}（可用 --with-skill、--no-skill）" }
         }
     }
     $cdn = if ($env:REBANG_CDN) { $env:REBANG_CDN.TrimEnd('/') } else { 'https://cli.rebang.today' }
@@ -77,7 +77,7 @@ function Install-Rebang([string[]]$opts) {
     $tmp = Join-Path ([IO.Path]::GetTempPath()) ("rebang-" + [Guid]::NewGuid())
     New-Item -ItemType Directory -Path $tmp | Out-Null
     try {
-        Write-Host "正在下载 rebang $ver（$platform）…"
+        Write-Host "正在下载 rebang ${ver}（${platform}）…"
         $zip = Join-Path $tmp 'rebang.zip'
         Invoke-WebRequest -UseBasicParsing -Headers $headers $url -OutFile $zip
         $got = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()

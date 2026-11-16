@@ -49,7 +49,7 @@ detect_platform() {
 	case "$os" in
 	Darwin) os=darwin ;;
 	Linux) os=linux ;;
-	*) die "不支持的系统：$os（Windows 请使用 install.ps1）" ;;
+	*) die "不支持的系统：${os}（Windows 请使用 install.ps1）" ;;
 	esac
 	arch="$(uname -m)"
 	case "$arch" in
@@ -73,9 +73,9 @@ manifest_field() {
 # 列出本机已安装的 Agent（与 rebang skill install 的默认目标一致）。
 detect_agents() {
 	names=""
-	[ -d "$HOME/.claude" ] && names="${names:+$names、}Claude Code"
-	[ -d "$HOME/.codex" ] && names="${names:+$names、}Codex"
-	[ -d "$HOME/.agents" ] && names="${names:+$names、}~/.agents"
+	[ -d "$HOME/.claude" ] && names="${names:+${names}、}Claude Code"
+	[ -d "$HOME/.codex" ] && names="${names:+${names}、}Codex"
+	[ -d "$HOME/.agents" ] && names="${names:+${names}、}~/.agents"
 	printf '%s' "$names"
 }
 
@@ -110,7 +110,7 @@ main() {
 		case "$arg" in
 		--with-skill) SKILL_CHOICE=1 ;;
 		--no-skill) SKILL_CHOICE=0 ;;
-		*) die "未知参数：$arg（可用 --with-skill、--no-skill）" ;;
+		*) die "未知参数：${arg}（可用 --with-skill、--no-skill）" ;;
 		esac
 	done
 	need tar
@@ -135,7 +135,7 @@ main() {
 
 	tmp="$(mktemp -d)"
 	trap 'rm -rf "$tmp"' EXIT INT TERM
-	say "正在下载 rebang $ver（$platform）…"
+	say "正在下载 rebang ${ver}（${platform}）…"
 	fetch "$url" > "$tmp/rebang.tar.gz" || die "下载失败：$url"
 	got="$(sha256 "$tmp/rebang.tar.gz")"
 	[ "$got" = "$want" ] || die "sha256 校验失败，已中止安装"
