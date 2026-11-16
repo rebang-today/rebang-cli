@@ -100,7 +100,7 @@ JSON 输出时（非终端或 -o json），拿到授权码后立即在标准错�
 func newLogoutCmd(a *App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "logout",
-		Short: "退出登录并吊销本机 Token",
+		Short: "退出登录",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			f, _ := credentials.Load()
@@ -119,7 +119,7 @@ func newLogoutCmd(a *App) *cobra.Command {
 				// Token 已失效时视同吊销成功；其他失败只提示，本地凭证照常删除。
 				if mapped.Exit != errs.ExitAuth {
 					revoked = false
-					a.Info("警告：未能通知服务端吊销 Token（%s），可在网站设置中手动吊销本设备。\n", mapped.Message)
+					a.Info("注意：本机已退出，但未能同步到服务器（%s），可在网站设置中移除这台设备。\n", mapped.Message)
 				}
 			}
 			if err := credentials.ClearToken(); err != nil {
@@ -169,7 +169,7 @@ func newAuthStatusCmd(a *App) *cobra.Command {
 					if mapped.Exit == errs.ExitAuth {
 						st.LoggedIn = false
 						_ = a.Writer().Write(statusResult(st))
-						return errs.Unauthorized("登录已失效或已在网站中被吊销")
+						return errs.Unauthorized("登录已失效，或这台设备已在网站中被移除")
 					}
 					_ = a.Writer().Write(statusResult(st))
 					return mapped

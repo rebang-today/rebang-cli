@@ -140,7 +140,7 @@ func loginPretty(li loginInfo) func(ui.Theme, int) string {
 		}
 		expiry := li.expiry
 		if expiry == "" {
-			expiry = "未指定到期时间，可在网站中随时吊销"
+			expiry = "长期有效，可随时在网站中移除这台设备"
 		}
 		fields = append(fields,
 			ui.Field{Key: "设备", Value: li.device},
@@ -228,11 +228,7 @@ func logoutPretty(loggedIn, revoked bool) func(ui.Theme, int) string {
 		if !loggedIn {
 			return t.Dim.Render(ui.MarkOff+" 当前未登录，无需退出") + "\n"
 		}
-		s := t.Success("已退出登录")
-		if revoked {
-			s += t.Dim.Render("，本设备的 Token 已在服务端吊销")
-		}
-		return s + "\n"
+		return t.Success("已退出登录") + "\n"
 	}
 }
 
