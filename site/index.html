@@ -3,335 +3,644 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>今日热榜 CLI</title>
-<meta name="description" content="今日热榜（rebang.today）官方命令行客户端：在终端里看各平台热榜、搜索热点、读 AI 总结，也能交给 Claude Code、Codex 等 Agent 使用。">
-<meta name="color-scheme" content="light dark">
+<title>rebang CLI · 今日热榜命令行</title>
+<meta name="description" content="今日热榜官方命令行：在终端浏览微博、知乎、B 站、GitHub 等全网热榜，搜索热点、阅读 AI 总结；输出 JSON，内置 Agent Skill，Claude Code、Codex 可直接使用。">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0a0c11">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23ff5a36'/%3E%3Cpath d='M9 11l6 5-6 5' stroke='%23fff' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M17 22h7' stroke='%23fff' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
 :root {
-  --bg: #ffffff;
-  --fg: #111827;
-  --muted: #6b7280;
-  --line: #e5e7eb;
-  --card: #f9fafb;
-  --code-bg: #f3f4f6;
-  --accent: #2c5cf5;
-  --accent-soft: #eef2ff;
-  --top: #d9480f;
-  --term-bg: #0f172a;
-  --term-fg: #e5e7eb;
-  --term-dim: #94a3b8;
-  --term-accent: #7aa2f7;
-  --term-top: #f7670d;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0b0d12;
-    --fg: #e5e7eb;
-    --muted: #9ca3af;
-    --line: #262b36;
-    --card: #12151c;
-    --code-bg: #171b24;
-    --accent: #7aa2f7;
-    --accent-soft: #1f2a44;
-    --top: #f7670d;
-    --term-bg: #05070b;
-  }
+  --bg: #0a0c11;
+  --bg-2: #0f1218;
+  --panel: #12161e;
+  --panel-2: #161b25;
+  --line: #222836;
+  --line-2: #2c3343;
+  --fg: #eceef3;
+  --fg-2: #c4c9d4;
+  --muted: #8b93a5;
+  --dim: #5d6576;
+  --hot: #ff5a36;
+  --hot-2: #ff8a3d;
+  --blue: #5b8cff;
+  --green: #3ddc97;
+  --yellow: #f5c451;
+  --mono: "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, "Liberation Mono", monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --r: 14px;
 }
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+[hidden] { display: none !important; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  font: 16px/1.7 -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Segoe UI", sans-serif;
+  font: 16px/1.7 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
-a { color: var(--accent); text-decoration: none; }
-a:hover { text-decoration: underline; }
-code, pre, kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
-code { background: var(--code-bg); padding: .1em .35em; border-radius: 4px; font-size: .9em; }
-.wrap { max-width: 860px; margin: 0 auto; padding: 0 20px; }
-header.top { border-bottom: 1px solid var(--line); }
-header.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 56px; }
-.brand { font-weight: 700; color: var(--fg); display: flex; align-items: center; gap: 8px; }
-.brand-mark { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 6px; background: var(--accent); color: #fff; font-size: 14px; }
-@media (prefers-color-scheme: dark) { .brand-mark { background: #3d63d8; } }
-nav.links { display: flex; gap: 18px; font-size: 14px; }
-nav.links a { color: var(--muted); }
-.hero { padding: 48px 0 24px; }
-.hero h1 { font-size: 36px; line-height: 1.25; margin: 0 0 12px; letter-spacing: .5px; }
-.hero p.lead { font-size: 18px; color: var(--muted); margin: 0 0 28px; max-width: 640px; }
-section { padding: 28px 0; border-top: 1px solid var(--line); }
-section:first-of-type { border-top: 0; }
-h2 { font-size: 22px; margin: 0 0 14px; }
-h3 { font-size: 17px; margin: 22px 0 8px; }
-p { margin: 0 0 12px; }
-ul { padding-left: 1.3em; margin: 0 0 12px; }
-li { margin: 4px 0; }
-.muted { color: var(--muted); }
-.small { font-size: 14px; }
-
-.tabs { display: inline-flex; gap: 4px; padding: 4px; background: var(--code-bg); border-radius: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-.tabs button {
-  border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 14px;
-  padding: 6px 14px; border-radius: 7px; cursor: pointer;
+body::before {
+  content: "";
+  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(900px 520px at 85% -10%, rgba(255, 90, 54, .16), transparent 60%),
+    radial-gradient(700px 480px at -5% 10%, rgba(91, 140, 255, .12), transparent 60%),
+    linear-gradient(var(--bg), var(--bg));
 }
-.tabs button[aria-selected="true"] { background: var(--bg); color: var(--fg); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
-.panel[hidden] { display: none; }
-
-.cmd {
-  position: relative; display: flex; align-items: flex-start; gap: 10px;
-  background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px;
-  padding: 12px 12px 12px 16px; margin: 8px 0 12px;
+body::after {
+  content: "";
+  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255,255,255,.028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.028) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(to bottom, #000 0, transparent 900px);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, transparent 900px);
 }
-.cmd pre { margin: 0; flex: 1; min-width: 0; overflow-x: auto; font-size: 14px; line-height: 1.7; white-space: pre; }
-.cmd pre .c { color: var(--muted); }
-.copy {
-  flex: none; border: 1px solid var(--line); background: var(--bg); color: var(--fg);
-  font: inherit; font-size: 13px; padding: 3px 10px; border-radius: 6px; cursor: pointer;
+a { color: inherit; }
+code, pre, kbd { font-family: var(--mono); }
+code { font-size: .88em; color: var(--fg); background: rgba(255,255,255,.06); border: 1px solid var(--line); padding: .05em .4em; border-radius: 6px; white-space: nowrap; }
+.wrap { max-width: 1160px; margin: 0 auto; padding: 0 24px; }
+@media (max-width: 640px) { .wrap { padding: 0 16px; } }
+
+/* ── nav ── */
+.nav { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); background: rgba(10,12,17,.72); border-bottom: 1px solid rgba(255,255,255,.05); }
+.nav .wrap { display: flex; align-items: center; gap: 28px; height: 60px; }
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font-weight: 700; letter-spacing: -.01em; }
+.brand svg { flex: none; }
+.brand small { font: 500 12px var(--mono); color: var(--muted); border: 1px solid var(--line-2); border-radius: 999px; padding: 1px 8px; }
+.nav nav { display: flex; gap: 22px; margin-left: auto; font-size: 14px; }
+.nav nav a { color: var(--muted); text-decoration: none; transition: color .15s; white-space: nowrap; }
+.nav nav a:hover { color: var(--fg); }
+.gh { display: inline-flex; align-items: center; gap: 6px; }
+@media (max-width: 760px) { .nav nav a.opt { display: none; } }
+@media (max-width: 480px) { .nav nav { gap: 16px; } .nav nav a.opt2 { display: none; } .brand small { display: none; } }
+
+/* ── hero ── */
+.hero { padding-top: 72px; padding-bottom: 40px; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 48px; align-items: center; }
+.eyebrow { display: inline-flex; align-items: center; gap: 8px; font: 500 13px var(--mono); color: var(--fg-2); border: 1px solid var(--line-2); background: rgba(255,255,255,.03); padding: 5px 12px 5px 8px; border-radius: 999px; }
+.eyebrow .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--hot); box-shadow: 0 0 0 4px rgba(255,90,54,.18); animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 7px rgba(255,90,54,0); } }
+h1 { margin: 22px 0 18px; font-size: clamp(40px, 5.4vw, 68px); line-height: 1.04; font-weight: 800; letter-spacing: -.035em; }
+h1 .nw { white-space: nowrap; }
+h1 .hl { background: linear-gradient(100deg, var(--hot) 10%, var(--hot-2) 90%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.lead { font-size: 18px; color: var(--fg-2); max-width: 34em; margin: 0 0 30px; }
+.lead b { color: var(--fg); font-weight: 600; }
+
+.installer { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--r); box-shadow: 0 20px 60px -30px rgba(0,0,0,.8); max-width: 560px; }
+.os-tabs { display: flex; gap: 2px; padding: 6px; border-bottom: 1px solid var(--line); }
+.os-tabs button { all: unset; cursor: pointer; font-size: 13px; color: var(--muted); padding: 6px 12px; border-radius: 8px; transition: background .15s, color .15s; }
+.os-tabs button:hover { color: var(--fg); }
+.os-tabs button[aria-selected="true"] { color: var(--fg); background: var(--panel-2); box-shadow: inset 0 0 0 1px var(--line-2); }
+.os-tabs button:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.cmdline { display: flex; align-items: center; gap: 12px; padding: 14px 14px 14px 18px; }
+.cmdline pre { flex: 1; min-width: 0; margin: 0; overflow-x: auto; font-size: 14px; color: var(--fg); scrollbar-width: none; }
+.cmdline pre::-webkit-scrollbar { display: none; }
+.cmdline pre::before { content: "$ "; color: var(--hot); }
+.cmdline.ps pre::before { content: "> "; }
+.install-note { padding: 0 18px 14px; margin: 0; font-size: 13px; color: var(--muted); }
+.hero-links { display: flex; flex-wrap: wrap; gap: 10px 22px; margin-top: 20px; font-size: 14px; }
+.hero-links a { color: var(--fg-2); text-decoration: none; border-bottom: 1px dashed var(--line-2); }
+.hero-links a:hover { color: var(--fg); border-color: var(--fg-2); }
+
+.copy { all: unset; cursor: pointer; flex: none; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--fg-2); padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line-2); background: rgba(255,255,255,.03); transition: all .15s; }
+.copy:hover { color: var(--fg); border-color: var(--muted); }
+.copy:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.copy.done { color: var(--green); border-color: rgba(61,220,151,.5); }
+.copy svg { width: 14px; height: 14px; }
+
+/* ── terminal ── */
+.term { background: #07090d; border: 1px solid var(--line-2); border-radius: 16px; box-shadow: 0 40px 100px -40px rgba(255,90,54,.35), 0 30px 80px -30px rgba(0,0,0,.9); overflow: hidden; min-width: 0; }
+.term-bar { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); background: #0c0f15; }
+.term-bar i { width: 11px; height: 11px; border-radius: 50%; background: #2a2f3b; }
+.term-bar i:nth-child(1) { background: #ff5f57; } .term-bar i:nth-child(2) { background: #febc2e; } .term-bar i:nth-child(3) { background: #28c840; }
+.term-bar span { margin-left: 10px; font: 12px var(--mono); color: var(--dim); }
+.term-body { font: 13px/1.75 var(--mono); padding: 18px 20px 20px; height: 330px; overflow: hidden; white-space: pre; color: var(--fg-2); }
+.term-body .p { color: var(--hot); }
+.term-body .cmd { color: var(--fg); }
+.term-body .h { color: var(--dim); }
+.term-body .r { color: var(--hot-2); }
+.term-body .n { color: var(--yellow); }
+.term-body .k { color: var(--blue); }
+.term-body .s { color: var(--green); }
+.term-body .m { color: var(--muted); }
+.term-body .ln { opacity: 0; transform: translateY(3px); animation: ln .28s ease-out forwards; }
+@keyframes ln { to { opacity: 1; transform: none; } }
+.caret { display: inline-block; width: .6em; height: 1.1em; vertical-align: -.2em; background: var(--fg); animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.scenes { display: flex; gap: 6px; padding: 10px 14px; border-top: 1px solid var(--line); background: #0c0f15; overflow-x: auto; }
+.scenes button { all: unset; cursor: pointer; font: 12px var(--mono); color: var(--dim); padding: 4px 10px; border-radius: 6px; white-space: nowrap; }
+.scenes button[aria-pressed="true"] { color: var(--fg); background: var(--panel-2); }
+.scenes button:focus-visible { outline: 2px solid var(--blue); }
+.scenes .note { margin-left: auto; font: 12px var(--sans); color: var(--dim); align-self: center; white-space: nowrap; }
+
+/* ── ticker ── */
+.ticker { border-block: 1px solid var(--line); background: rgba(255,255,255,.015); overflow: hidden; margin-top: 40px; }
+.ticker-track { display: flex; width: max-content; animation: marquee 60s linear infinite; }
+.ticker:hover .ticker-track { animation-play-state: paused; }
+.ticker ul { display: flex; margin: 0; padding: 0; list-style: none; }
+.ticker li { padding: 14px 22px; font-size: 14px; color: var(--muted); white-space: nowrap; display: flex; align-items: center; gap: 22px; }
+.ticker li::after { content: ""; width: 4px; height: 4px; border-radius: 50%; background: var(--line-2); }
+@keyframes marquee { to { transform: translateX(-50%); } }
+
+/* ── sections ── */
+section { padding: 96px 0 0; scroll-margin-top: 40px; }
+.kicker { font: 600 13px var(--mono); color: var(--hot); letter-spacing: .04em; margin: 0 0 12px; }
+h2 { font-size: clamp(30px, 4vw, 44px); line-height: 1.15; letter-spacing: -.025em; margin: 0 0 14px; font-weight: 800; }
+.sub { color: var(--muted); font-size: 17px; max-width: 40em; margin: 0 0 40px; }
+h3 { font-size: 18px; margin: 0 0 8px; letter-spacing: -.01em; }
+
+/* 三种用法 */
+.modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.mode { position: relative; background: linear-gradient(180deg, var(--panel), var(--bg-2)); border: 1px solid var(--line); border-radius: var(--r); padding: 26px 24px 22px; overflow: hidden; transition: border-color .2s, transform .2s; }
+.mode:hover { border-color: var(--line-2); transform: translateY(-2px); }
+.mode .ix { font: 600 12px var(--mono); color: var(--dim); }
+.mode h3 { margin-top: 14px; font-size: 20px; }
+.mode p { color: var(--muted); font-size: 14.5px; margin: 0 0 18px; }
+.snip { font: 12.5px/1.8 var(--mono); background: #07090d; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 0; color: var(--fg-2); overflow-x: auto; white-space: pre; }
+.snip .p { color: var(--hot); } .snip .c { color: var(--dim); } .snip .s { color: var(--green); } .snip .k { color: var(--blue); }
+.keys { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; font-size: 12.5px; color: var(--muted); align-items: center; }
+kbd { font-size: 11.5px; color: var(--fg-2); border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: 5px; padding: 0 6px; background: var(--panel-2); }
+
+/* Agent */
+.agent { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 24px; min-width: 0; }
+.chat { display: flex; flex-direction: column; gap: 12px; font-size: 14.5px; }
+.bubble { max-width: 88%; padding: 10px 14px; border-radius: 12px; }
+.bubble.me { align-self: flex-end; background: rgba(91,140,255,.16); border: 1px solid rgba(91,140,255,.3); }
+.bubble.ai { align-self: flex-start; background: var(--panel-2); border: 1px solid var(--line-2); color: var(--fg-2); }
+.tool { align-self: flex-start; font: 12.5px var(--mono); color: var(--muted); display: flex; gap: 8px; align-items: center; padding-left: 4px; max-width: 100%; overflow: hidden; }
+.tool b { color: var(--green); font-weight: 500; }
+.tool span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bubble.ai ol { margin: 6px 0 0; padding-left: 1.3em; }
+.bubble.ai ol li { margin: 2px 0; }
+.bubble.ai .m { color: var(--dim); font-size: 13px; }
+.prompt-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.prompt-head h3 { margin: 0; }
+.prompt { font: 13px/1.85 var(--mono); background: #07090d; border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 0; color: var(--fg-2); white-space: pre-wrap; word-break: break-word; }
+.agents { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 0; }
+.agents span { font: 12.5px var(--mono); padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--fg-2); }
+.feats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 20px; }
+.feat { padding: 20px 22px; border: 1px solid var(--line); border-radius: var(--r); background: rgba(255,255,255,.015); }
+.feat h3 { font-size: 16px; display: flex; align-items: center; gap: 8px; }
+.feat h3::before { content: ""; width: 6px; height: 6px; border-radius: 2px; background: var(--hot); }
+.feat p { margin: 0; color: var(--muted); font-size: 14px; }
+
+/* 命令 */
+.cmds { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.cmds div { background: var(--bg-2); padding: 18px 20px; transition: background .15s; }
+.cmds div:hover { background: var(--panel); }
+.cmds > div > code { all: unset; font: 600 14px var(--mono); color: var(--fg); }
+.cmds .tag { font: 11px var(--sans); color: var(--hot-2); border: 1px solid rgba(255,138,61,.35); border-radius: 4px; padding: 0 5px; margin-left: 8px; vertical-align: 1px; }
+.cmds p { margin: 4px 0 0; color: var(--muted); font-size: 13.5px; line-height: 1.6; }
+.pipe { margin-top: 20px; display: flex; align-items: center; gap: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 14px 14px 18px; }
+.pipe pre { flex: 1; min-width: 0; margin: 0; overflow-x: auto; font-size: 13.5px; color: var(--fg-2); }
+.pipe pre::before { content: "$ "; color: var(--hot); }
+.fine { color: var(--muted); font-size: 14px; margin: 14px 0 0; }
+
+/* 安装细节 */
+.details { display: grid; gap: 12px; }
+details { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); }
+details[open] { border-color: var(--line-2); }
+summary { cursor: pointer; list-style: none; padding: 18px 22px; display: flex; align-items: center; gap: 12px; font-weight: 600; }
+summary::-webkit-details-marker { display: none; }
+summary::after { content: "+"; margin-left: auto; font: 400 20px var(--mono); color: var(--muted); transition: transform .2s; }
+details[open] summary::after { transform: rotate(45deg); }
+summary small { font-weight: 400; color: var(--muted); font-size: 14px; }
+summary:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: var(--r); }
+.dbody { padding: 0 22px 22px; color: var(--fg-2); font-size: 15px; }
+.dbody p { margin: 0 0 12px; }
+.dbody ul { margin: 0 0 12px; padding-left: 1.2em; } .dbody li { margin: 4px 0; }
+.block { display: flex; gap: 12px; align-items: flex-start; background: #07090d; border: 1px solid var(--line); border-radius: 10px; padding: 12px 12px 12px 16px; margin: 0 0 14px; }
+.block pre { flex: 1; min-width: 0; margin: 0; font-size: 13px; line-height: 1.8; overflow-x: auto; color: var(--fg-2); }
+.block .c { color: var(--dim); }
+.tbl { overflow-x: auto; margin: 0 0 12px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+td code { white-space: normal; word-break: break-all; }
+th { color: var(--muted); font-weight: 500; font-size: 13px; }
+tr:last-child td { border-bottom: 0; }
+.warn { border-left: 3px solid var(--yellow); background: rgba(245,196,81,.07); padding: 10px 14px; border-radius: 0 8px 8px 0; font-size: 14px; color: var(--fg-2); }
+
+/* CTA + footer */
+.cta { margin: 110px 0 0; padding: 56px 40px; border-radius: 22px; border: 1px solid var(--line-2); background: radial-gradient(600px 260px at 50% 0, rgba(255,90,54,.18), transparent 70%), var(--panel); text-align: center; }
+.cta h2 { margin-bottom: 10px; }
+.cta p { color: var(--muted); margin: 0 auto 26px; }
+.cta .installer { margin: 0 auto; text-align: left; }
+footer { margin-top: 80px; border-top: 1px solid var(--line); padding: 28px 0 40px; font-size: 14px; color: var(--muted); }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: space-between; }
+footer a { color: var(--fg-2); text-decoration: none; }
+footer a:hover { color: var(--fg); }
+footer nav { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+
+/* 入场 */
+.rise { animation: rise .7s cubic-bezier(.2,.7,.2,1) both; }
+.rise.d1 { animation-delay: .08s; } .rise.d2 { animation-delay: .16s; } .rise.d3 { animation-delay: .24s; } .rise.d4 { animation-delay: .32s; }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } }
+.reveal { opacity: 0; transform: translateY(18px); transition: opacity .7s ease, transform .7s cubic-bezier(.2,.7,.2,1); }
+.reveal.in { opacity: 1; transform: none; }
+
+@media (max-width: 960px) {
+  .hero { grid-template-columns: minmax(0, 1fr); gap: 40px; padding-top: 48px; }
+  .modes, .feats { grid-template-columns: minmax(0, 1fr); }
+  .agent { grid-template-columns: minmax(0, 1fr); }
 }
-.copy:hover { border-color: var(--accent); color: var(--accent); }
-.copy.done { color: #15803d; border-color: #15803d; }
-@media (prefers-color-scheme: dark) { .copy.done { color: #4ade80; border-color: #4ade80; } }
-
-.term {
-  background: var(--term-bg); color: var(--term-fg); border-radius: 12px; overflow: hidden;
-  border: 1px solid #1f2937; box-shadow: 0 10px 30px rgba(15, 23, 42, .18);
+@media (max-width: 640px) {
+  .lead { font-size: 16px; }
+  .term-body { font-size: 11.5px; height: 290px; padding: 14px; }
+  .cmdline pre { font-size: 13px; }
+  section { padding-top: 72px; }
+  .cta { padding: 40px 18px; }
+  .scenes .note { display: none; }
 }
-.term-bar { display: flex; gap: 6px; padding: 10px 14px; border-bottom: 1px solid #1f2937; }
-.term-bar i { width: 10px; height: 10px; border-radius: 50%; background: #334155; display: block; }
-.term-body { padding: 14px 16px 16px; font: 13.5px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", "PingFang SC", "Microsoft YaHei", monospace; overflow-x: auto; }
-.term .tl { white-space: pre; }
-.term .gap { margin-top: 14px; }
-.term .tt { width: auto; margin: 2px 0 8px; font-size: inherit; border-collapse: collapse; }
-.term .tt td { border: 0; padding: 0 18px 0 0; white-space: nowrap; }
-.term .tt tr.d td { padding-bottom: 2px; border-bottom: 1px solid #334155; }
-.term .tt tr:nth-child(2) td { padding-top: 4px; }
-.term .p { color: var(--term-accent); }
-.term .d { color: var(--term-dim); }
-.term .t { color: var(--term-top); font-weight: 700; }
-.caption { font-size: 13px; color: var(--muted); margin-top: 8px; }
-
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin: 8px 0 4px; }
-.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
-.card b { display: block; margin-bottom: 4px; }
-.card p { margin: 0; font-size: 14px; color: var(--muted); }
-
-table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 6px 0 12px; }
-th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
-th { color: var(--muted); font-weight: 600; }
-.table-wrap { overflow-x: auto; }
-.note { background: var(--accent-soft); border-radius: 10px; padding: 12px 16px; font-size: 14px; margin: 10px 0; }
-footer { border-top: 1px solid var(--line); padding: 28px 0 40px; font-size: 14px; color: var(--muted); }
-footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 18px; justify-content: space-between; }
-
-@media (max-width: 600px) {
-  .wrap { padding: 0 16px; }
-  .hero { padding: 32px 0 16px; }
-  .hero h1 { font-size: 28px; }
-  .hero p.lead { font-size: 16px; }
-  nav.links { gap: 12px; }
-  nav.links .opt { display: none; }
-  .cmd pre { font-size: 13px; }
-  .term-body { font-size: 12px; }
-  .term .tt .u { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .reveal { opacity: 1; transform: none; }
+  .term-body .ln { opacity: 1; transform: none; }
 }
 </style>
 </head>
 <body>
-<header class="top">
+
+<header class="nav">
   <div class="wrap">
-    <a class="brand" href="./"><span class="brand-mark">榜</span>今日热榜 CLI</a>
-    <nav class="links">
-      <a href="#install">安装</a>
-      <a class="opt" href="#agent">Agent</a>
-      <a href="https://github.com/rebang-today/rebang-cli">GitHub</a>
-      <a class="opt" href="https://rebang.today">rebang.today</a>
+    <a class="brand" href="#top" aria-label="rebang CLI 首页">
+      <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#ff5a36"/><path d="M9 11l6 5-6 5" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M17 22h7" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg>
+      rebang <small id="ver">CLI</small>
+    </a>
+    <nav aria-label="页面导航">
+      <a class="opt" href="#modes">用法</a>
+      <a class="opt2" href="#agent">Agent</a>
+      <a class="opt" href="#commands">命令</a>
+      <a href="#more">安装说明</a>
+      <a class="gh" href="https://github.com/rebang-today/rebang-cli"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
     </nav>
   </div>
 </header>
 
-<main class="wrap">
-  <div class="hero">
-    <h1>今日热榜 CLI</h1>
-    <p class="lead">今日热榜（rebang.today）官方命令行客户端：在终端里浏览微博、知乎、B 站、GitHub 等平台的热榜，搜索热点，阅读 AI 总结；输出 JSON，也能交给 Claude Code、Codex 等 AI Agent 使用。</p>
+<main id="top">
+  <div class="wrap hero">
+    <div>
+      <span class="eyebrow rise"><span class="dot"></span>今日热榜官方命令行 · 开源</span>
+      <h1 class="rise d1">全网热榜，<br><span class="nw"><span class="hl">一行命令</span>直达。</span></h1>
+      <p class="lead rise d2">微博、知乎、B 站、GitHub 等 <b>上百个榜单</b>，在终端里浏览、搜索、读 AI 总结。默认输出 JSON，还内置 Agent Skill，<b>Claude Code、Codex</b> 装上就能用。</p>
 
-    <div class="term" aria-label="终端效果示意">
-      <div class="term-bar"><i></i><i></i><i></i></div>
-<div class="term-body">
-<div class="tl"><span class="p">$</span> rebang list --tab weibo -n 5</div>
-<table class="tt">
-<tr class="d"><td>#</td><td>标题</td><td>热度</td><td class="u">链接</td></tr>
-<tr><td class="t">1</td><td>示例热搜标题一</td><td class="d">235.6万</td><td class="u">https://s.weibo.com/…</td></tr>
-<tr><td class="t">2</td><td>示例热搜标题二</td><td class="d">181.2万</td><td class="u">https://s.weibo.com/…</td></tr>
-<tr><td class="t">3</td><td>示例热搜标题三</td><td class="d">96.4万</td><td class="u">https://s.weibo.com/…</td></tr>
-<tr><td>4</td><td>示例热搜标题四</td><td class="d">72.0万</td><td class="u">https://s.weibo.com/…</td></tr>
-<tr><td>5</td><td>示例热搜标题五</td><td class="d">58.9万</td><td class="u">https://s.weibo.com/…</td></tr>
-</table>
-<div class="tl d">用浏览器打开第 N 条：rebang open N --tab weibo</div>
-<div class="tl gap"><span class="p">$</span> rebang list --tab zhihu -n 1 -o json | jq '.items[0] | {rank, title, item_key}'</div>
-<div class="tl">{ "rank": 1, "title": "示例问题标题", "item_key": "…" }</div>
-</div>
+      <div class="installer rise d3" data-installer>
+        <div class="os-tabs" role="tablist" aria-label="选择安装方式">
+          <button role="tab" aria-selected="true" data-os="unix">macOS / Linux</button>
+          <button role="tab" aria-selected="false" data-os="win">Windows</button>
+          <button role="tab" aria-selected="false" data-os="brew">Homebrew</button>
+        </div>
+        <div class="cmdline" data-panel="unix"><pre>curl -fsSL https://cli.rebang.today/install.sh | sh</pre><button class="copy" type="button">复制</button></div>
+        <div class="cmdline ps" data-panel="win" hidden><pre>irm https://cli.rebang.today/install.ps1 | iex</pre><button class="copy" type="button">复制</button></div>
+        <div class="cmdline" data-panel="brew" hidden><pre>brew install rebang-today/tap/rebang</pre><button class="copy" type="button">复制</button></div>
+        <p class="install-note" data-note="unix">安装到 <code>~/.local/bin</code>，检测到 Claude Code / Codex 时会询问是否一并安装 Agent Skill。</p>
+        <p class="install-note" data-note="win" hidden>在 PowerShell 中运行，安装后重新打开终端即可使用。</p>
+        <p class="install-note" data-note="brew" hidden>适用于 macOS，之后用 <code>brew upgrade rebang</code> 升级。</p>
+      </div>
+      <div class="hero-links rise d4">
+        <a href="#agent">让 Agent 帮你装 →</a>
+        <a href="#start">装好之后做什么 →</a>
+      </div>
     </div>
-    <p class="caption">示意内容，实际以实时热榜为准。不带参数运行 <code>rebang</code> 进入全屏交互界面，支持键盘与鼠标。</p>
+
+    <div class="term rise d2" aria-label="终端演示">
+      <div class="term-bar"><i></i><i></i><i></i><span>~ — rebang</span></div>
+      <div class="term-body" id="screen" aria-live="off"></div>
+      <div class="scenes" role="group" aria-label="切换演示">
+        <button type="button" data-scene="0" aria-pressed="true">看榜单</button>
+        <button type="button" data-scene="1" aria-pressed="false">搜热点</button>
+        <button type="button" data-scene="2" aria-pressed="false">接管道</button>
+        <span class="note">示意数据</span>
+      </div>
+    </div>
   </div>
 
-  <section id="install">
-    <h2>安装</h2>
-    <div class="tabs" role="tablist" aria-label="选择系统">
-      <button role="tab" id="tab-unix" aria-selected="true" aria-controls="panel-unix" data-os="unix">macOS / Linux</button>
-      <button role="tab" id="tab-win" aria-selected="false" aria-controls="panel-win" data-os="win">Windows</button>
-      <button role="tab" id="tab-brew" aria-selected="false" aria-controls="panel-brew" data-os="brew">Homebrew</button>
+  <div class="ticker" aria-label="支持的平台（部分）">
+    <div class="ticker-track">
+      <ul><li>微博</li><li>知乎</li><li>抖音</li><li>哔哩哔哩</li><li>小红书</li><li>百度</li><li>今日头条</li><li>GitHub</li><li>36氪</li><li>IT之家</li><li>虎嗅</li><li>少数派</li><li>掘金</li><li>Hugging Face</li><li>澎湃新闻</li><li>豆瓣</li><li>虎扑</li><li>雪球</li><li>什么值得买</li><li>微信读书</li></ul>
+      <ul aria-hidden="true"><li>微博</li><li>知乎</li><li>抖音</li><li>哔哩哔哩</li><li>小红书</li><li>百度</li><li>今日头条</li><li>GitHub</li><li>36氪</li><li>IT之家</li><li>虎嗅</li><li>少数派</li><li>掘金</li><li>Hugging Face</li><li>澎湃新闻</li><li>豆瓣</li><li>虎扑</li><li>雪球</li><li>什么值得买</li><li>微信读书</li></ul>
     </div>
+  </div>
 
-    <div class="panel" role="tabpanel" id="panel-unix" aria-labelledby="tab-unix">
-      <div class="cmd"><pre>curl -fsSL https://cli.rebang.today/install.sh | sh</pre><button class="copy" type="button">复制</button></div>
-      <p class="small muted">默认安装到 <code>~/.local/bin/rebang</code>；不在 PATH 中时脚本会提示需要加入的那一行。</p>
-    </div>
-    <div class="panel" role="tabpanel" id="panel-win" aria-labelledby="tab-win" hidden>
-      <div class="cmd"><pre>irm https://cli.rebang.today/install.ps1 | iex</pre><button class="copy" type="button">复制</button></div>
-      <p class="small muted">在 PowerShell 中运行。安装到 <code>%LOCALAPPDATA%\Programs\rebang</code> 并加入用户 PATH，重新打开终端后生效。</p>
-    </div>
-    <div class="panel" role="tabpanel" id="panel-brew" aria-labelledby="tab-brew" hidden>
-      <div class="cmd"><pre>brew install rebang-today/tap/rebang</pre><button class="copy" type="button">复制</button></div>
-      <p class="small muted">适用于 macOS。升级用 <code>brew upgrade rebang</code>。</p>
-    </div>
+  <div class="wrap">
+    <section id="modes">
+      <p class="kicker">// 三种用法</p>
+      <h2>人用、脚本用、Agent 用。</h2>
+      <p class="sub">同一个 <code>rebang</code>：直接运行是交互界面；接在管道里自动输出 JSON；装上 Skill，AI Agent 就知道怎么用它。</p>
+      <div class="modes" id="start">
+        <div class="mode reveal">
+          <span class="ix">01 · 交互界面</span>
+          <h3>像看网页一样刷热榜</h3>
+          <p>不带参数运行，进入全屏界面，按菜单、Tab 浏览榜单，支持键盘与鼠标。</p>
+<pre class="snip"><span class="p">$</span> rebang</pre>
+          <div class="keys"><kbd>↑</kbd><kbd>↓</kbd> 移动 <kbd>←</kbd><kbd>→</kbd> 来源 / 榜单 <kbd>tab</kbd> 子榜 <kbd>/</kbd> 搜索 <kbd>↵</kbd> 打开</div>
+        </div>
+        <div class="mode reveal">
+          <span class="ix">02 · 命令与脚本</span>
+          <h3>一条命令拿到结构化结果</h3>
+          <p>终端里是表格，进管道就是 JSON，也可以用 <code>-o json|md|table</code> 指定。</p>
+<pre class="snip"><span class="p">$</span> rebang list --tab zhihu
+<span class="p">$</span> rebang search 大模型
+<span class="p">$</span> rebang summary &lt;item_key&gt;</pre>
+        </div>
+        <div class="mode reveal">
+          <span class="ix">03 · AI Agent</span>
+          <h3>让 Agent 读懂今天的热点</h3>
+          <p>内置 Agent Skill，装好后直接用自然语言问，Agent 自己去查榜、搜索、读总结。</p>
+<pre class="snip"><span class="p">$</span> rebang skill install
+<span class="s">✓</span> 已安装到 claude、codex</pre>
+        </div>
+      </div>
+    </section>
 
-    <h3>同时安装 Agent Skill</h3>
-    <p>安装脚本检测到本机装有 Claude Code、Codex（存在 <code>~/.claude</code>、<code>~/.codex</code> 或 <code>~/.agents</code>）时，会询问“是否安装 rebang Agent Skill？[Y/n]”，直接回车即安装；没有终端可询问时（CI 等）不安装。也可以明确指定：</p>
-    <div class="cmd"><pre>curl -fsSL https://cli.rebang.today/install.sh | sh -s -- --with-skill   <span class="c"># 或 --no-skill</span></pre><button class="copy" type="button">复制</button></div>
-    <div class="table-wrap">
-      <table>
-        <tr><th>环境变量</th><th>说明</th></tr>
-        <tr><td><code>REBANG_INSTALL_SKILL</code></td><td><code>1</code> 同时安装 Agent Skill，<code>0</code> 不安装，均不再询问</td></tr>
-        <tr><td><code>REBANG_INSTALL_DIR</code></td><td>安装目录</td></tr>
-        <tr><td><code>REBANG_VERSION</code></td><td>安装指定版本，如 <code>0.1.0</code></td></tr>
-      </table>
-    </div>
-    <p class="small muted">Windows 可先设置 <code>$env:REBANG_INSTALL_SKILL=1</code> 再运行安装命令。安装脚本会校验安装包的 sha256。</p>
-  </section>
+    <section id="agent">
+      <p class="kicker">// Agent Skill</p>
+      <h2>把今日热榜交给你的 Agent。</h2>
+      <p class="sub">Skill 告诉 Agent 有哪些命令、怎么找榜单、什么时候需要登录。你只管提问。</p>
 
-  <section id="start">
-    <h2>快速上手</h2>
-    <div class="cmd"><pre>rebang                          <span class="c"># 进入交互界面</span>
-rebang list --tab zhihu         <span class="c"># 知乎热榜</span>
-rebang list --tab weibo -n 10   <span class="c"># 微博热搜前 10 条</span>
-rebang search 大模型            <span class="c"># 搜索热榜条目</span>
-rebang summary &lt;item_key&gt;       <span class="c"># 条目的 AI 总结（item_key 来自 -o json）</span>
-rebang menus                    <span class="c"># 菜单列表，再用 tabs / nodes 找榜单</span></pre><button class="copy" type="button">复制</button></div>
+      <div class="agent">
+        <div class="card reveal" aria-label="对话示意">
+          <div class="chat">
+            <div class="bubble me">今天科技圈在聊什么？挑三条跟我说说</div>
+            <div class="tool"><b>●</b><span>rebang list --tab top-tech -n 10 -o json</span></div>
+            <div class="tool"><b>●</b><span>rebang summary &lt;item_key&gt; -o json</span></div>
+            <div class="bubble ai">科技热榜今天最受关注的三条：
+              <ol><li>…… 一句话要点</li><li>…… 一句话要点</li><li>…… 一句话要点</li></ol>
+              <span class="m">需要的话我可以展开某一条的 AI 总结和网友观点。</span>
+            </div>
+          </div>
+        </div>
 
-    <h3>JSON 输出</h3>
-    <p>输出到终端时默认是表格，被管道或 Agent 读取时默认 JSON，也可以用 <code>-o json|md|table</code> 指定。结果写标准输出，提示写标准错误，管道里的 JSON 可以直接解析：</p>
-    <div class="cmd"><pre>rebang list --tab weibo -n 10 | jq -r '.items[] | "\(.rank). \(.title)"'</pre><button class="copy" type="button">复制</button></div>
-
-    <h3>登录（可选）</h3>
-    <p>热榜、搜索与 AI 总结都不需要登录。需要“我的关注”、内容监控等功能时再登录：</p>
-    <div class="cmd"><pre>rebang auth login               <span class="c"># 浏览器授权；SSH 等无桌面环境加 --no-browser</span>
-rebang following                <span class="c"># 我的关注</span>
-rebang monitor hits --unread    <span class="c"># 内容监控中未读的命中内容</span></pre><button class="copy" type="button">复制</button></div>
-    <p class="small muted">每个命令的详细参数见 <code>rebang &lt;命令&gt; --help</code>。</p>
-  </section>
-
-  <section id="agent">
-    <h2>给 AI Agent 使用</h2>
-    <p>rebang 内置一份 Agent Skill，安装后 Claude Code、Codex 等 Agent 就知道如何查热榜、搜索与读取 AI 总结。</p>
-    <div class="cmd"><pre>rebang skill install            <span class="c"># 安装到本机已有的 Agent</span>
-rebang skill install --agent claude
-rebang skill status
-rebang skill uninstall</pre><button class="copy" type="button">复制</button></div>
-    <div class="grid">
-      <div class="card"><b>随版本同步</b><p>Skill 内嵌在程序中，<code>rebang update</code> 升级后自动同步已安装的 Skill。</p></div>
-      <div class="card"><b>按需登录</b><p>只有遇到需要登录的功能时，Agent 才会询问你，并把授权链接和授权码转告给你。</p></div>
-      <div class="card"><b>版本提醒</b><p>有新版本时 JSON 结果附带 <code>_notice</code>，Agent 在完成任务后提醒你，不会自行升级。设置 <code>REBANG_NO_NOTICE=1</code> 关闭。</p></div>
-    </div>
-    <h3>交给 Agent 安装</h3>
-    <p>把下面这段发给你的 Agent：</p>
-    <div class="cmd"><pre>请帮我安装今日热榜命令行 rebang，并把它的 Agent Skill 装到本机：
+        <div class="card reveal">
+          <div class="prompt-head">
+            <h3>复制给 Agent，让它帮你装好</h3>
+            <button class="copy" type="button" data-target="agent-prompt">复制</button>
+          </div>
+<pre class="prompt" id="agent-prompt">请帮我安装今日热榜命令行 rebang，并把它的 Agent Skill 装到本机：
 1. 运行 curl -fsSL https://cli.rebang.today/install.sh | sh -s -- --with-skill
    （Windows 用 PowerShell：$env:REBANG_INSTALL_SKILL=1; irm https://cli.rebang.today/install.ps1 | iex）
 2. 运行 rebang skill install，确认 Skill 已安装（rebang skill status）。
 3. 运行 rebang list --tab zhihu -n 5 -o json 验证可用，这一步不需要登录。
-不需要登录。以后用到我的关注、内容监控等功能时，再按需帮我登录。</pre><button class="copy" type="button">复制</button></div>
-  </section>
+不需要登录。以后用到我的关注、内容监控等功能时，再按需帮我登录。</pre>
+          <div class="agents" aria-label="支持的 Agent">
+            <span>Claude Code</span><span>Codex</span><span>~/.agents/skills 兼容 Agent</span>
+          </div>
+        </div>
+      </div>
 
-  <section id="update">
-    <h2>更新与卸载</h2>
-    <div class="cmd"><pre>rebang update            <span class="c"># 升级到最新版本，并同步已安装的 Agent Skill</span>
+      <div class="feats">
+        <div class="feat reveal"><h3>随版本同步</h3><p>Skill 内嵌在程序里，<code>rebang update</code> 升级后自动同步已安装的 Skill。</p></div>
+        <div class="feat reveal"><h3>按需登录</h3><p>热榜、搜索、AI 总结都不用登录。用到关注、监控时，Agent 才会把授权链接转给你。</p></div>
+        <div class="feat reveal"><h3>不擅自升级</h3><p>有新版本时 JSON 里附带 <code>_notice</code>，Agent 会提醒你，不会自己动手。</p></div>
+      </div>
+    </section>
+
+    <section id="commands">
+      <p class="kicker">// 命令一览</p>
+      <h2>常用命令</h2>
+      <p class="sub">每个命令的完整参数见 <code>rebang &lt;命令&gt; --help</code>。</p>
+      <div class="cmds">
+        <div><code>rebang list</code><p>查看榜单，如 <code>--tab weibo -n 10</code></p></div>
+        <div><code>rebang search</code><p>按关键词搜索热榜条目</p></div>
+        <div><code>rebang summary</code><p>条目的 AI 总结：要点、经过、观点、网友怎么看</p></div>
+        <div><code>rebang menus</code><p>菜单：综合、科技、娱乐、开发、财经…</p></div>
+        <div><code>rebang tabs</code><p>菜单下的榜单与二级 Tab，如 <code>--menu tech</code></p></div>
+        <div><code>rebang open</code><p>用浏览器打开第 N 条</p></div>
+        <div><code>rebang following</code><span class="tag">需登录</span><p>我关注的榜单</p></div>
+        <div><code>rebang monitor</code><span class="tag">需登录</span><p>内容监控的计划与命中内容</p></div>
+        <div><code>rebang auth login</code><p>浏览器授权登录，无桌面环境加 <code>--no-browser</code></p></div>
+        <div><code>rebang skill</code><p>安装、查看、卸载 Agent Skill</p></div>
+        <div><code>rebang update</code><p>升级到最新版本，校验签名后替换</p></div>
+        <div><code>rebang doctor</code><p>环境诊断，排查安装与连接问题</p></div>
+      </div>
+      <div class="pipe"><pre>rebang list --tab weibo -n 10 | jq -r '.items[] | "\(.rank). \(.title)"'</pre><button class="copy" type="button">复制</button></div>
+      <p class="fine">结果写标准输出，提示写标准错误；退出码区分未登录（3）、需要会员（4）、限流（5）、网络错误（6）等情况，方便脚本处理。</p>
+    </section>
+
+    <section id="more">
+      <p class="kicker">// 安装说明</p>
+      <h2>安装、升级与卸载</h2>
+      <p class="sub">需要指定目录、版本，或者想手动校验安装包，看这里。</p>
+      <div class="details">
+        <details>
+          <summary>安装选项 <small>Agent Skill、安装目录、指定版本</small></summary>
+          <div class="dbody">
+            <p>检测到本机有 <code>~/.claude</code>、<code>~/.codex</code> 或 <code>~/.agents</code> 时，安装脚本会询问是否安装 Agent Skill，直接回车即安装；没有终端可询问时（如 CI）不安装。也可以明确指定：</p>
+            <div class="block"><pre>curl -fsSL https://cli.rebang.today/install.sh | sh -s -- --with-skill   <span class="c"># 或 --no-skill</span></pre><button class="copy" type="button">复制</button></div>
+            <div class="tbl"><table>
+              <tr><th>环境变量</th><th>说明</th></tr>
+              <tr><td><code>REBANG_INSTALL_SKILL</code></td><td><code>1</code> 安装 Agent Skill，<code>0</code> 不安装，都不再询问</td></tr>
+              <tr><td><code>REBANG_INSTALL_DIR</code></td><td>安装目录，默认 <code>~/.local/bin</code>；Windows 默认 <code>%LOCALAPPDATA%\Programs\rebang</code></td></tr>
+              <tr><td><code>REBANG_VERSION</code></td><td>安装指定版本，如 <code>0.1.0</code></td></tr>
+            </table></div>
+            <p>Windows 可先设置 <code>$env:REBANG_INSTALL_SKILL=1</code> 再运行安装命令。安装脚本会校验安装包的 sha256。</p>
+          </div>
+        </details>
+
+        <details>
+          <summary>升级 <small>rebang update</small></summary>
+          <div class="dbody">
+            <div class="block"><pre>rebang update            <span class="c"># 升级到最新版本，并同步已安装的 Agent Skill</span>
 rebang update --check    <span class="c"># 只检查是否有新版本</span></pre><button class="copy" type="button">复制</button></div>
-    <p class="small muted">通过 Homebrew 安装的请使用 <code>brew upgrade rebang</code>。</p>
+            <p>通过 Homebrew 安装的请使用 <code>brew upgrade rebang</code>。</p>
+          </div>
+        </details>
 
-    <h3>卸载</h3>
-    <div class="table-wrap">
-      <table>
-        <tr><th>步骤</th><th>macOS / Linux</th><th>Windows</th></tr>
-        <tr><td>移除 Agent Skill</td><td colspan="2"><code>rebang skill uninstall</code></td></tr>
-        <tr><td>删除程序</td><td><code>rm ~/.local/bin/rebang</code><br><span class="muted">Homebrew：<code>brew uninstall rebang</code></span></td><td>删除 <code>%LOCALAPPDATA%\Programs\rebang</code></td></tr>
-        <tr><td>删除配置与凭证（可选）</td><td><code>rm -r ~/.config/rebang</code></td><td>删除 <code>%AppData%\rebang</code></td></tr>
-      </table>
-    </div>
-    <p class="small muted">删除凭证前可先运行 <code>rebang auth logout</code>，在服务端吊销本机的登录。</p>
-  </section>
+        <details>
+          <summary>卸载 <small>程序、Skill 与本地配置</small></summary>
+          <div class="dbody">
+            <div class="tbl"><table>
+              <tr><th>步骤</th><th>macOS / Linux</th><th>Windows</th></tr>
+              <tr><td>退出登录（可选）</td><td colspan="2"><code>rebang auth logout</code>，在服务端吊销本机的登录</td></tr>
+              <tr><td>移除 Agent Skill</td><td colspan="2"><code>rebang skill uninstall</code></td></tr>
+              <tr><td>删除程序</td><td><code>rm ~/.local/bin/rebang</code><br>Homebrew：<code>brew uninstall rebang</code></td><td>删除 <code>%LOCALAPPDATA%\Programs\rebang</code></td></tr>
+              <tr><td>删除配置与凭证</td><td><code>rm -r ~/.config/rebang</code></td><td>删除 <code>%AppData%\rebang</code></td></tr>
+            </table></div>
+          </div>
+        </details>
 
-  <section id="verify">
-    <h2>校验与安全</h2>
-    <ul>
-      <li>版本信息：<a href="https://cli.rebang.today/manifest.json"><code>https://cli.rebang.today/manifest.json</code></a>，包含最新版本、各平台下载地址与 sha256。</li>
-      <li>安装包位于 <code>https://cli.rebang.today/v&lt;版本&gt;/</code>，同目录下有 <code>checksums.txt</code> 与每个安装包的 <code>.minisig</code> 签名；也可以从 <a href="https://github.com/rebang-today/rebang-cli/releases">GitHub Releases</a> 下载。</li>
-      <li><code>rebang update</code> 会校验 sha256 与 minisign 签名，公钥内置在程序中，ID 为 <code>05B5851321C39815</code>。</li>
-    </ul>
-    <p>手动校验下载的安装包：</p>
-    <div class="cmd"><pre>minisign -Vm rebang_&lt;版本&gt;_&lt;系统&gt;_&lt;架构&gt;.tar.gz \
+        <details>
+          <summary>校验与安全 <small>sha256、minisign 签名</small></summary>
+          <div class="dbody">
+            <ul>
+              <li>版本信息：<a href="https://cli.rebang.today/manifest.json"><code>manifest.json</code></a>，包含最新版本、各平台下载地址与 sha256。</li>
+              <li>安装包位于 <code>https://cli.rebang.today/v&lt;版本&gt;/</code>，同目录有 <code>checksums.txt</code> 和每个安装包的 <code>.minisig</code> 签名；也可以从 <a href="https://github.com/rebang-today/rebang-cli/releases">GitHub Releases</a> 下载。</li>
+              <li><code>rebang update</code> 会校验 sha256 与 minisign 签名，公钥内置在程序中，ID 为 <code>05B5851321C39815</code>。</li>
+            </ul>
+            <p>手动校验下载的安装包：</p>
+            <div class="block"><pre>minisign -Vm rebang_&lt;版本&gt;_&lt;系统&gt;_&lt;架构&gt;.tar.gz \
   -P RWQVmMMhE4W1BeDo1A9XochNm6l4wkPvqzzVUZdIM4yf9/gEqyg0vG/y</pre><button class="copy" type="button">复制</button></div>
-    <div class="note">macOS 上用浏览器手动下载的程序可能提示“无法验证开发者”，解压后执行 <code>xattr -d com.apple.quarantine ./rebang</code> 即可；通过安装脚本或 Homebrew 安装不受影响。</div>
-  </section>
+            <p class="warn">macOS 上用浏览器手动下载的程序可能提示“无法验证开发者”，解压后执行 <code>xattr -d com.apple.quarantine ./rebang</code> 即可；通过安装脚本或 Homebrew 安装不受影响。</p>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <div class="cta reveal">
+      <h2>现在就试试。</h2>
+      <p>不需要注册，装好就能看热榜。</p>
+      <div class="installer" data-installer>
+        <div class="os-tabs" role="tablist" aria-label="选择安装方式">
+          <button role="tab" aria-selected="true" data-os="unix">macOS / Linux</button>
+          <button role="tab" aria-selected="false" data-os="win">Windows</button>
+          <button role="tab" aria-selected="false" data-os="brew">Homebrew</button>
+        </div>
+        <div class="cmdline" data-panel="unix"><pre>curl -fsSL https://cli.rebang.today/install.sh | sh</pre><button class="copy" type="button">复制</button></div>
+        <div class="cmdline ps" data-panel="win" hidden><pre>irm https://cli.rebang.today/install.ps1 | iex</pre><button class="copy" type="button">复制</button></div>
+        <div class="cmdline" data-panel="brew" hidden><pre>brew install rebang-today/tap/rebang</pre><button class="copy" type="button">复制</button></div>
+      </div>
+    </div>
+  </div>
 </main>
 
 <footer>
   <div class="wrap">
-    <span>今日热榜 CLI · Apache-2.0 开源</span>
-    <span><a href="https://github.com/rebang-today/rebang-cli">GitHub：rebang-today/rebang-cli</a> · <a href="https://rebang.today">今日热榜 rebang.today</a></span>
+    <span>rebang CLI · Apache-2.0 开源</span>
+    <nav aria-label="外部链接">
+      <a href="https://github.com/rebang-today/rebang-cli">GitHub</a>
+      <a href="https://github.com/rebang-today/rebang-cli/releases">更新日志</a>
+      <a href="https://rebang.today">今日热榜 rebang.today</a>
+    </nav>
   </div>
 </footer>
 
 <script>
 (function () {
-  var tabs = document.querySelectorAll('.tabs button');
-  function select(os) {
-    for (var i = 0; i < tabs.length; i++) {
-      var on = tabs[i].getAttribute('data-os') === os;
-      tabs[i].setAttribute('aria-selected', on ? 'true' : 'false');
-      document.getElementById(tabs[i].getAttribute('aria-controls')).hidden = !on;
+  'use strict';
+  var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* 安装方式切换：两处安装框联动，Windows 访客默认选中 PowerShell */
+  var installers = document.querySelectorAll('[data-installer]');
+  function selectOS(os) {
+    for (var i = 0; i < installers.length; i++) {
+      var box = installers[i];
+      var tabs = box.querySelectorAll('[data-os]');
+      for (var j = 0; j < tabs.length; j++) tabs[j].setAttribute('aria-selected', tabs[j].getAttribute('data-os') === os ? 'true' : 'false');
+      var parts = box.querySelectorAll('[data-panel],[data-note]');
+      for (var k = 0; k < parts.length; k++) parts[k].hidden = (parts[k].getAttribute('data-panel') || parts[k].getAttribute('data-note')) !== os;
     }
   }
-  for (var i = 0; i < tabs.length; i++) {
-    tabs[i].addEventListener('click', function () { select(this.getAttribute('data-os')); });
-  }
-  if (/Windows/i.test(navigator.userAgent)) select('win');
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest && e.target.closest('[data-os]');
+    if (t) selectOS(t.getAttribute('data-os'));
+  });
+  if (/Windows/i.test(navigator.userAgent)) selectOS('win');
 
+  /* 复制：去掉行尾“# 注释”，便于直接粘贴运行 */
   function copyText(text) {
     if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
     return new Promise(function (resolve, reject) {
       var ta = document.createElement('textarea');
       ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
       document.body.appendChild(ta); ta.select();
-      try { document.execCommand('copy') ? resolve() : reject(); } catch (e) { reject(e); }
+      try { document.execCommand('copy') ? resolve() : reject(); } catch (err) { reject(err); }
       document.body.removeChild(ta);
     });
   }
-  var buttons = document.querySelectorAll('.copy');
-  for (var j = 0; j < buttons.length; j++) {
-    buttons[j].addEventListener('click', function () {
+  var copies = document.querySelectorAll('.copy');
+  for (var c = 0; c < copies.length; c++) {
+    copies[c].addEventListener('click', function () {
       var btn = this;
-      // 复制时去掉行尾的“# 注释”，便于直接粘贴运行；多行说明文字原样复制。
-      var pre = btn.parentNode.querySelector('pre');
+      var id = btn.getAttribute('data-target');
+      var pre = id ? document.getElementById(id) : btn.parentNode.querySelector('pre');
       var clone = pre.cloneNode(true);
       var notes = clone.querySelectorAll('.c');
-      for (var k = 0; k < notes.length; k++) notes[k].parentNode.removeChild(notes[k]);
+      for (var n = 0; n < notes.length; n++) notes[n].parentNode.removeChild(notes[n]);
       var text = clone.textContent.split('\n').map(function (l) { return l.replace(/\s+$/, ''); }).join('\n').trim();
       copyText(text).then(function () {
-        btn.textContent = '已复制'; btn.classList.add('done');
-        setTimeout(function () { btn.textContent = '复制'; btn.classList.remove('done'); }, 1500);
+        btn.textContent = '已复制 ✓'; btn.classList.add('done');
+        setTimeout(function () { btn.textContent = '复制'; btn.classList.remove('done'); }, 1600);
       }, function () { btn.textContent = '请手动复制'; });
     });
+  }
+
+  /* 版本号取自 manifest.json，失败时保留默认文字 */
+  if (window.fetch) {
+    fetch('/manifest.json', { cache: 'no-cache' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (m) {
+      if (m && /^[0-9][0-9A-Za-z.\-]*$/.test(m.version || '')) document.getElementById('ver').textContent = 'v' + m.version;
+    }).catch(function () {});
+  }
+
+  /* 终端演示（示意数据） */
+  function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function pad(s, w) { var len = 0; for (var i = 0; i < s.length; i++) len += s.charCodeAt(i) >= 0x2E80 ? 2 : 1; return s + new Array(Math.max(0, w - len) + 1).join(' '); }
+  var scenes = [
+    { cmd: 'rebang list --tab weibo -n 6', out: [
+      '<span class="h">#  ' + pad('标题', 28) + '热度</span>',
+      '<span class="h">─  ' + pad('────────────────────────────', 28) + '──────────</span>',
+      '<span class="r">1</span>  ' + pad('年度流行语榜单今天公布', 28) + '<span class="n">235万热度</span>',
+      '<span class="r">2</span>  ' + pad('多地迎来今冬第一场雪', 28) + '<span class="n">181万热度</span>',
+      '<span class="r">3</span>  ' + pad('演唱会门票十秒售罄', 28) + '<span class="n">96.4万热度</span>',
+      '4  ' + pad('新能源车冬季续航实测', 28) + '<span class="n">72.0万热度</span>',
+      '5  ' + pad('这届年轻人开始攒金豆', 28) + '<span class="n">58.9万热度</span>',
+      '6  ' + pad('博物馆夜场一票难求', 28) + '<span class="n">41.3万热度</span>',
+      '',
+      '<span class="m">用浏览器打开第 N 条：rebang open N --tab weibo</span>'
+    ]},
+    { cmd: 'rebang search 大模型 -n 4', out: [
+      '<span class="h">#  ' + pad('标题', 30) + pad('来源', 8) + '最后在榜</span>',
+      '<span class="h">─  ' + pad('──────────────────────────────', 30) + pad('──────', 8) + '──────────</span>',
+      '1  ' + pad('大模型价格战进入新阶段', 30) + pad('虎嗅', 8) + '<span class="m">11-16 12:21</span>',
+      '2  ' + pad('开源模型榜单又换了第一', 30) + pad('量子位', 8) + '<span class="m">11-16 11:05</span>',
+      '3  ' + pad('端侧大模型能跑多快', 30) + pad('IT之家', 8) + '<span class="m">11-16 09:47</span>',
+      '4  ' + pad('大模型应用的冬天来了吗', 30) + pad('36氪', 8) + '<span class="m">11-15 22:30</span>',
+      '',
+      '<span class="m">共 1373 条结果</span>'
+    ]},
+    { cmd: "rebang list --tab zhihu -n 3 | jq '.items[0]'", out: [
+      '{',
+      '  <span class="k">"rank"</span>: <span class="n">1</span>,',
+      '  <span class="k">"title"</span>: <span class="s">"有哪些让你相见恨晚的效率工具？"</span>,',
+      '  <span class="k">"heat"</span>: <span class="s">"1203万热度"</span>,',
+      '  <span class="k">"url"</span>: <span class="s">"https://www.zhihu.com/question/…"</span>,',
+      '  <span class="k">"item_key"</span>: <span class="s">"…"</span>',
+      '}',
+      '',
+      '<span class="p">$</span> <span class="cmd">rebang summary &lt;item_key&gt;</span>   <span class="m"># 读 AI 总结</span>'
+    ]}
+  ];
+  var screen = document.getElementById('screen');
+  var sceneBtns = document.querySelectorAll('[data-scene]');
+  var timer = null, current = 0, token = 0;
+
+  function prompt(cmdHtml, caret) { return '<span class="p">$</span> <span class="cmd">' + cmdHtml + '</span>' + (caret ? '<span class="caret"></span>' : ''); }
+  function renderStatic(i) {
+    var s = scenes[i];
+    screen.innerHTML = prompt(esc(s.cmd)) + '\n' + s.out.join('\n');
+  }
+  function mark(i) { for (var b = 0; b < sceneBtns.length; b++) sceneBtns[b].setAttribute('aria-pressed', String(b === i)); }
+  function play(i) {
+    var my = ++token; current = i; mark(i); clearTimeout(timer);
+    if (reduce) { renderStatic(i); return; }
+    var s = scenes[i], n = 0;
+    (function type() {
+      if (my !== token) return;
+      screen.innerHTML = prompt(esc(s.cmd.slice(0, n)), true);
+      if (n++ < s.cmd.length) { timer = setTimeout(type, 28 + Math.random() * 40); return; }
+      timer = setTimeout(function () {
+        if (my !== token) return;
+        var html = prompt(esc(s.cmd)) + '\n';
+        for (var l = 0; l < s.out.length; l++) html += '<span class="ln" style="animation-delay:' + (l * 55) + 'ms">' + (s.out[l] || ' ') + '</span>\n';
+        screen.innerHTML = html + '<span class="ln" style="animation-delay:' + (s.out.length * 55) + 'ms"><span class="p">$</span> <span class="caret"></span></span>';
+        timer = setTimeout(function () { if (my === token) play((i + 1) % scenes.length); }, 5200);
+      }, 380);
+    })();
+  }
+  for (var sb = 0; sb < sceneBtns.length; sb++) sceneBtns[sb].addEventListener('click', function () { play(+this.getAttribute('data-scene')); });
+  renderStatic(0);
+  if (!reduce) setTimeout(function () { play(0); }, 500);
+
+  /* 滚动进入时淡入 */
+  var rev = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    for (var r = 0; r < rev.length; r++) rev[r].classList.add('in');
+  } else {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } });
+    }, { rootMargin: '0px 0px -8% 0px' });
+    for (var q = 0; q < rev.length; q++) io.observe(rev[q]);
   }
 })();
 </script>
