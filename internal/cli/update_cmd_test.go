@@ -20,6 +20,7 @@ import (
 
 	"github.com/rebang-today/rebang-cli/internal/buildinfo"
 	"github.com/rebang-today/rebang-cli/internal/errs"
+	"github.com/rebang-today/rebang-cli/internal/ui"
 	"github.com/rebang-today/rebang-cli/internal/update"
 )
 
@@ -106,5 +107,24 @@ func TestUpdateEndToEnd(t *testing.T) {
 	b, _ := os.ReadFile(exe)
 	if !bytes.Equal(b, newBin) {
 		t.Fatal("binary not replaced")
+	}
+}
+
+func TestUpdatePretty(t *testing.T) {
+	th := ui.Plain()
+	cases := []struct {
+		r    UpdateResult
+		want string
+	}{
+		{UpdateResult{Current: "0.1.1", Latest: "0.1.1"}, "✓ 已是最新版本 0.1.1\n"},
+		{UpdateResult{Current: "0.1.1", Latest: "0.1.2", CheckOnly: true, NotesURL: "https://x/n"},
+			"! 发现新版本 0.1.2（当前 0.1.1）\n  运行 rebang update 升级\n  更新说明：https://x/n\n"},
+		{UpdateResult{Current: "0.1.1", Latest: "0.1.2", Updated: true, SkillsUpdated: []string{"claude", "codex"}, NotesURL: "https://x/n"},
+			"✓ 已升级到 0.1.2（原 0.1.1）\n  已同步 Agent Skill：claude、codex\n  更新说明：https://x/n\n"},
+	}
+	for _, c := range cases {
+		if got := updatePretty(c.r)(th, 80); got != c.want {
+			t.Errorf("got\n%s\nwant\n%s", got, c.want)
+		}
 	}
 }

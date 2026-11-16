@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -13,6 +14,7 @@ import (
 	"github.com/rebang-today/rebang-cli/internal/buildinfo"
 	"github.com/rebang-today/rebang-cli/internal/errs"
 	"github.com/rebang-today/rebang-cli/internal/output"
+	"github.com/rebang-today/rebang-cli/internal/ui"
 	"github.com/rebang-today/rebang-cli/internal/update"
 )
 
@@ -125,6 +127,36 @@ func updateOutput(r UpdateResult, msg string) output.Result {
 		Columns:  []output.Column{{Title: "当前版本"}, {Title: "最新版本"}, {Title: "结果"}},
 		Rows:     [][]string{{r.Current, r.Latest, msg}},
 		Markdown: func() string { return msg },
+		Pretty:   updatePretty(r),
+	}
+}
+
+// updatePretty 给人看的输出：一行结论，必要时附下一步与更新说明，不用表格。
+func updatePretty(r UpdateResult) func(t ui.Theme, width int) string {
+	return func(t ui.Theme, _ int) string {
+		var b strings.Builder
+		newer := update.Compare(r.Latest, r.Current) > 0
+		switch {
+		case r.Updated:
+			b.WriteString(t.Success("已升级到 " + r.Latest))
+			if r.Current != r.Latest {
+				b.WriteString(t.Dim.Render("（原 " + r.Current + "）"))
+			}
+			b.WriteByte('\n')
+			if len(r.SkillsUpdated) > 0 {
+				b.WriteString("  " + t.Dim.Render("已同步 Agent Skill：") + strings.Join(r.SkillsUpdated, "、") + "\n")
+			}
+		case newer:
+			b.WriteString(t.Warning("发现新版本 "+t.Strong.Render(r.Latest)+t.Dim.Render("（当前 "+r.Current+"）")) + "\n")
+			b.WriteString("  " + t.Hint("运行 ", "rebang update") + t.Dim.Render(" 升级") + "\n")
+		default:
+			b.WriteString(t.Success("已是最新版本 "+r.Current) + "\n")
+			return b.String()
+		}
+		if r.NotesURL != "" {
+			b.WriteString("  " + t.Dim.Render("更新说明：") + t.Accent.Render(r.NotesURL) + "\n")
+		}
+		return b.String()
 	}
 }
 
