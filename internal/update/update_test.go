@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -150,7 +151,7 @@ func TestReplace(t *testing.T) {
 	}
 	b, _ := os.ReadFile(exe)
 	st, _ := os.Stat(exe)
-	if string(b) != "NEW" || st.Mode().Perm()&0o111 == 0 {
+	if string(b) != "NEW" || (runtime.GOOS != "windows" && st.Mode().Perm()&0o111 == 0) {
 		t.Fatal(string(b), st.Mode())
 	}
 	if ManagedBy("/opt/homebrew/Cellar/rebang/0.1.0/bin/rebang") != "homebrew" || ManagedBy(exe) != "" {

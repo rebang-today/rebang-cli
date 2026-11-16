@@ -1,0 +1,2 @@
+# 统一 LF：golden 快照、内嵌公钥与 Skill 模板按字节比对，Windows 检出不能转 CRLF
+* text=auto eol=lf

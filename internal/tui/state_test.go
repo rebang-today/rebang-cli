@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -45,10 +46,10 @@ func TestStateRestoresAcrossMenus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fi.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Fatalf("状态文件权限应为 0600，got %v", fi.Mode().Perm())
 	}
-	if di, _ := os.Stat(filepath.Dir(path)); di.Mode().Perm() != 0o700 {
+	if di, _ := os.Stat(filepath.Dir(path)); runtime.GOOS != "windows" && di.Mode().Perm() != 0o700 {
 		t.Fatalf("目录权限应为 0700，got %v", di.Mode().Perm())
 	}
 	var raw map[string]any
