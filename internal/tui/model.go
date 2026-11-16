@@ -446,7 +446,8 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.menusSeen = true
 			if m.mem.Menu != nil {
 				for i, mn := range m.menus {
-					if mn.ID == *m.mem.Menu {
+					// 上次停在“订阅”但现在未登录或已失效时不恢复，否则一打开就是空页面。
+					if mn.ID == *m.mem.Menu && (mn.ID != followMenuID || (m.loggedIn && !m.expired)) {
 						m.menuIdx = i
 					}
 				}

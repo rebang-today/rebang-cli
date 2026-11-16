@@ -140,10 +140,13 @@ func TestStateFollowMenuLoggedOut(t *testing.T) {
 	key(t, m, "0")
 	quit(m)
 
+	// 未登录时不回到空的订阅页，停在第一个服务端菜单（综合）。
 	m2 := start(t, stateFake(), Options{StatePath: path})
-	if m2.menuIdx != 0 || !m2.inFollowMenu() {
-		t.Fatalf("应停在订阅，menu=%d", m2.menuIdx)
+	if m2.menuIdx != 1 || m2.inFollowMenu() {
+		t.Fatalf("未登录应停在综合，menu=%d", m2.menuIdx)
 	}
+	// 手动切到订阅仍显示登录提示。
+	key(t, m2, "0")
 	if v := m2.View(); !containsAll(v, "登录后查看订阅") {
 		t.Fatalf("未登录应显示登录提示\n%s", v)
 	}
