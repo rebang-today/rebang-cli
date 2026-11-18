@@ -14,7 +14,7 @@ import (
 	"github.com/rebang-today/rebang-cli/internal/ui"
 )
 
-// SummaryResult 是 summary 命令的 JSON 输出：一句话总结与服务端原样返回的 detail。
+// SummaryResult 是 summary 命令的 JSON 输出：简述与服务端原样返回的 detail，均保留 **…** 强调标记。
 type SummaryResult struct {
 	SummaryShort string          `json:"summary_short"`
 	Detail       json.RawMessage `json:"detail"`
@@ -27,7 +27,7 @@ func newSummaryCmd(a *App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "summary <item_key>",
 		Short: "查看条目的 AI 总结",
-		Long: "查看条目的 AI 总结：一句话总结，以及要点、经过、观点、网友怎么看等分区。\n\n" +
+		Long: "查看条目的 AI 总结：简述（一到三句，加粗处是核心结论），以及要点、经过、观点、网友怎么看等分区。\n\n" +
 			"item_key 来自 rebang list 或 rebang search 的 JSON 输出（-o json）。不需要登录。不是所有条目都有总结，没有时退出码为 8。",
 		Example: "  rebang list --node <节点ID> -o json   # 取 item_key\n  rebang summary <item_key>\n  rebang summary <item_key> -o json",
 		Args:    cobra.ExactArgs(1),

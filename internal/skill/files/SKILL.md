@@ -77,7 +77,7 @@ rebang list --tab zhihu -n 10 -o json          # 取 items[].item_key
 rebang summary <item_key> -o json              # 单条的 AI 总结
 ```
 
-JSON：`summary_short`（一句话总结）与 `detail`。`detail` 中的分区都可能缺失：`points`（要点，字符串数组）、`timeline`（经过，`[{time, text}]`）、`viewpoints`（观点，`[{stance, text, by, quote}]`）、`reactions`（网友怎么看，`{mood, voices: [{by, text, quote}]}`）；不认识的分区忽略。文本中的 `**…**` 是强调标记。
+JSON：`summary_short`（简述，一到三个短句，通常用一处 `**…**` 标出核心结论）与 `detail`。`detail` 中的分区都可能缺失：`points`（要点，字符串数组）、`timeline`（经过，`[{time, text}]`）、`viewpoints`（观点，`[{stance, text, by, quote}]`）、`reactions`（网友怎么看，`{mood, voices: [{by, text, quote}]}`）；不认识的分区忽略。文本中的 `**…**` 是强调标记。
 
 没有总结时退出码为 8，这不是错误，不要重试。总结是 AI 根据原文生成的，引用时说明来源并附原链接；需要准确细节时以原文为准。只对用户关心的少数条目调用，不要对整页逐条查询。
 
