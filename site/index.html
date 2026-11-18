@@ -5,11 +5,48 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>rebang CLI · 今日热榜命令行</title>
 <meta name="description" content="今日热榜官方命令行：在终端浏览微博、知乎、B 站、GitHub 等全网热榜，搜索热点、阅读 AI 总结；输出 JSON，内置 Agent Skill，Claude Code、Codex 可直接使用。">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#0a0c11">
+<script>
+/* 明暗模式：优先读 rebang.today 全站共享的 rb_color_theme cookie，没有或为 system 时跟随系统；放在 head 里避免首屏闪烁 */
+(function () {
+  var root = document.documentElement;
+  var media = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : null;
+  function readPref() {
+    var m = document.cookie.match(/(?:^|;\s*)rb_color_theme=(light|dark|system)(?:;|$)/);
+    return m ? m[1] : 'system';
+  }
+  function apply() {
+    var pref = readPref();
+    var theme = pref === 'system' ? (media && !media.matches ? 'light' : 'dark') : pref;
+    root.setAttribute('data-theme', theme);
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', theme === 'light' ? '#f7f7f9' : '#0a0c11');
+  }
+  window.rbTheme = {
+    apply: apply,
+    set: function (theme) {
+      /* 线上写到主域名，主站与各子站共用；本地预览退回当前域名 */
+      var host = location.hostname;
+      var domain = host === 'rebang.today' || /\.rebang\.today$/.test(host) ? '; Domain=rebang.today' : '';
+      document.cookie = 'rb_color_theme=' + theme + '; Max-Age=31536000; Path=/' + domain + '; SameSite=Lax';
+      apply();
+    }
+  };
+  apply();
+  if (media) {
+    var onChange = function () { if (readPref() === 'system') apply(); };
+    media.addEventListener ? media.addEventListener('change', onChange) : media.addListener(onChange);
+  }
+  /* 在主站切换后回到本页时跟上新的选择 */
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') apply(); });
+})();
+</script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23ff5a36'/%3E%3Cpath d='M9 11l6 5-6 5' stroke='%23fff' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M17 22h7' stroke='%23fff' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
-:root {
+/* 深色是默认配色；终端演示在浅色模式下也保持深色，所以同一组变量在 .term 上再声明一次 */
+:root, [data-theme="light"] .term {
+  color-scheme: dark;
   --bg: #0a0c11;
   --bg-2: #0f1218;
   --panel: #12161e;
@@ -25,9 +62,48 @@
   --blue: #5b8cff;
   --green: #3ddc97;
   --yellow: #f5c451;
-  --mono: "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, "Liberation Mono", monospace;
+  --nav-bg: rgba(10,12,17,.72);
+  --nav-line: rgba(255,255,255,.05);
+  --tint-1: rgba(255,255,255,.015);
+  --tint-2: rgba(255,255,255,.03);
+  --tint-3: rgba(255,255,255,.06);
+  --grid: rgba(255,255,255,.028);
+  --glow-hot: rgba(255,90,54,.16);
+  --glow-blue: rgba(91,140,255,.12);
+  --shadow: rgba(0,0,0,.8);
+  --code-bg: #07090d;
+}
+:root { --mono: "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, "Liberation Mono", monospace;
   --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
   --r: 14px;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f7f7f9;
+  --bg-2: #f1f2f5;
+  --panel: #ffffff;
+  --panel-2: #f3f4f7;
+  --line: #e3e5ea;
+  --line-2: #d3d7df;
+  --fg: #12151c;
+  --fg-2: #3a404d;
+  --muted: #646c7c;
+  --dim: #8d94a3;
+  --hot: #ec4a25;
+  --hot-2: #f2762a;
+  --blue: #3366e6;
+  --green: #12a46a;
+  --yellow: #b7860b;
+  --nav-bg: rgba(247,247,249,.78);
+  --nav-line: rgba(15,20,30,.07);
+  --tint-1: rgba(15,20,30,.015);
+  --tint-2: rgba(15,20,30,.03);
+  --tint-3: rgba(15,20,30,.05);
+  --grid: rgba(15,20,30,.045);
+  --glow-hot: rgba(255,90,54,.10);
+  --glow-blue: rgba(91,140,255,.09);
+  --shadow: rgba(15,20,30,.18);
+  --code-bg: #f4f5f8;
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -52,20 +128,20 @@ body::after {
   content: "";
   position: fixed; inset: 0; z-index: -1; pointer-events: none;
   background-image:
-    linear-gradient(rgba(255,255,255,.028) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,.028) 1px, transparent 1px);
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
   background-size: 48px 48px;
   mask-image: linear-gradient(to bottom, #000 0, transparent 900px);
   -webkit-mask-image: linear-gradient(to bottom, #000 0, transparent 900px);
 }
 a { color: inherit; }
 code, pre, kbd { font-family: var(--mono); }
-code { font-size: .88em; color: var(--fg); background: rgba(255,255,255,.06); border: 1px solid var(--line); padding: .05em .4em; border-radius: 6px; white-space: nowrap; }
+code { font-size: .88em; color: var(--fg); background: var(--tint-3); border: 1px solid var(--line); padding: .05em .4em; border-radius: 6px; white-space: nowrap; }
 .wrap { max-width: 1160px; margin: 0 auto; padding: 0 24px; }
 @media (max-width: 640px) { .wrap { padding: 0 16px; } }
 
 /* ── nav ── */
-.nav { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); background: rgba(10,12,17,.72); border-bottom: 1px solid rgba(255,255,255,.05); }
+.nav { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); background: var(--nav-bg); border-bottom: 1px solid var(--nav-line); }
 .nav .wrap { display: flex; align-items: center; gap: 28px; height: 60px; }
 .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font-weight: 700; letter-spacing: -.01em; }
 .brand svg { flex: none; }
@@ -74,12 +150,19 @@ code { font-size: .88em; color: var(--fg); background: rgba(255,255,255,.06); bo
 .nav nav a { color: var(--muted); text-decoration: none; transition: color .15s; white-space: nowrap; }
 .nav nav a:hover { color: var(--fg); }
 .gh { display: inline-flex; align-items: center; gap: 6px; }
+.theme-toggle { all: unset; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; margin: 0 -6px; border-radius: 8px; color: var(--muted); transition: color .15s, background .15s; }
+.theme-toggle:hover { color: var(--fg); background: var(--tint-3); }
+.theme-toggle:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.theme-toggle svg { width: 18px; height: 18px; }
+/* 显示“点了会切到哪种”的图标：深色时显示太阳，浅色时显示月亮 */
+[data-theme="light"] .theme-toggle .sun, :root:not([data-theme="light"]) .theme-toggle .moon { display: none; }
+[data-theme="light"] .term { box-shadow: 0 40px 100px -40px rgba(255,90,54,.3), 0 30px 70px -30px rgba(15,20,30,.45); }
 @media (max-width: 760px) { .nav nav a.opt { display: none; } }
 @media (max-width: 480px) { .nav nav { gap: 16px; } .nav nav a.opt2 { display: none; } .brand small { display: none; } }
 
 /* ── hero ── */
 .hero { padding-top: 72px; padding-bottom: 40px; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 48px; align-items: center; }
-.eyebrow { display: inline-flex; align-items: center; gap: 8px; font: 500 13px var(--mono); color: var(--fg-2); border: 1px solid var(--line-2); background: rgba(255,255,255,.03); padding: 5px 12px 5px 8px; border-radius: 999px; }
+.eyebrow { display: inline-flex; align-items: center; gap: 8px; font: 500 13px var(--mono); color: var(--fg-2); border: 1px solid var(--line-2); background: var(--tint-2); padding: 5px 12px 5px 8px; border-radius: 999px; }
 .eyebrow .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--hot); box-shadow: 0 0 0 4px rgba(255,90,54,.18); animation: pulse 2s ease-in-out infinite; }
 @keyframes pulse { 50% { box-shadow: 0 0 0 7px rgba(255,90,54,0); } }
 h1 { margin: 22px 0 18px; font-size: clamp(40px, 5.4vw, 68px); line-height: 1.04; font-weight: 800; letter-spacing: -.035em; }
@@ -88,7 +171,7 @@ h1 .hl { background: linear-gradient(100deg, var(--hot) 10%, var(--hot-2) 90%); 
 .lead { font-size: 18px; color: var(--fg-2); max-width: 34em; margin: 0 0 30px; }
 .lead b { color: var(--fg); font-weight: 600; }
 
-.installer { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--r); box-shadow: 0 20px 60px -30px rgba(0,0,0,.8); max-width: 560px; }
+.installer { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--r); box-shadow: 0 20px 60px -30px var(--shadow); max-width: 560px; }
 .os-tabs { display: flex; gap: 2px; padding: 6px; border-bottom: 1px solid var(--line); }
 .os-tabs button { all: unset; cursor: pointer; font-size: 13px; color: var(--muted); padding: 6px 12px; border-radius: 8px; transition: background .15s, color .15s; }
 .os-tabs button:hover { color: var(--fg); }
@@ -104,7 +187,7 @@ h1 .hl { background: linear-gradient(100deg, var(--hot) 10%, var(--hot-2) 90%); 
 .hero-links a { color: var(--fg-2); text-decoration: none; border-bottom: 1px dashed var(--line-2); }
 .hero-links a:hover { color: var(--fg); border-color: var(--fg-2); }
 
-.copy { all: unset; cursor: pointer; flex: none; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--fg-2); padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line-2); background: rgba(255,255,255,.03); transition: all .15s; }
+.copy { all: unset; cursor: pointer; flex: none; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--fg-2); padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--tint-2); transition: all .15s; }
 .copy:hover { color: var(--fg); border-color: var(--muted); }
 .copy:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .copy.done { color: var(--green); border-color: rgba(61,220,151,.5); }
@@ -136,7 +219,7 @@ h1 .hl { background: linear-gradient(100deg, var(--hot) 10%, var(--hot-2) 90%); 
 .scenes .note { margin-left: auto; font: 12px var(--sans); color: var(--dim); align-self: center; white-space: nowrap; }
 
 /* ── ticker ── */
-.ticker { border-block: 1px solid var(--line); background: rgba(255,255,255,.015); overflow: hidden; margin-top: 40px; }
+.ticker { border-block: 1px solid var(--line); background: var(--tint-1); overflow: hidden; margin-top: 40px; }
 .ticker-track { display: flex; width: max-content; animation: marquee 60s linear infinite; }
 .ticker:hover .ticker-track { animation-play-state: paused; }
 .ticker ul { display: flex; margin: 0; padding: 0; list-style: none; }
@@ -158,7 +241,7 @@ h3 { font-size: 18px; margin: 0 0 8px; letter-spacing: -.01em; }
 .mode .ix { font: 600 12px var(--mono); color: var(--dim); }
 .mode h3 { margin-top: 14px; font-size: 20px; }
 .mode p { color: var(--muted); font-size: 14.5px; margin: 0 0 18px; }
-.snip { font: 12.5px/1.8 var(--mono); background: #07090d; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 0; color: var(--fg-2); overflow-x: auto; white-space: pre; }
+.snip { font: 12.5px/1.8 var(--mono); background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 0; color: var(--fg-2); overflow-x: auto; white-space: pre; }
 .snip .p { color: var(--hot); } .snip .c { color: var(--dim); } .snip .s { color: var(--green); } .snip .k { color: var(--blue); }
 .keys { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; font-size: 12.5px; color: var(--muted); align-items: center; }
 kbd { font-size: 11.5px; color: var(--fg-2); border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: 5px; padding: 0 6px; background: var(--panel-2); }
@@ -178,11 +261,11 @@ kbd { font-size: 11.5px; color: var(--fg-2); border: 1px solid var(--line-2); bo
 .bubble.ai .m { color: var(--dim); font-size: 13px; }
 .prompt-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .prompt-head h3 { margin: 0; }
-.prompt { font: 13px/1.85 var(--mono); background: #07090d; border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 0; color: var(--fg-2); white-space: pre-wrap; word-break: break-word; }
+.prompt { font: 13px/1.85 var(--mono); background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 0; color: var(--fg-2); white-space: pre-wrap; word-break: break-word; }
 .agents { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 0; }
 .agents span { font: 12.5px var(--mono); padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--fg-2); }
 .feats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 20px; }
-.feat { padding: 20px 22px; border: 1px solid var(--line); border-radius: var(--r); background: rgba(255,255,255,.015); }
+.feat { padding: 20px 22px; border: 1px solid var(--line); border-radius: var(--r); background: var(--tint-1); }
 .feat h3 { font-size: 16px; display: flex; align-items: center; gap: 8px; }
 .feat h3::before { content: ""; width: 6px; height: 6px; border-radius: 2px; background: var(--hot); }
 .feat p { margin: 0; color: var(--muted); font-size: 14px; }
@@ -212,7 +295,7 @@ summary:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; bo
 .dbody { padding: 0 22px 22px; color: var(--fg-2); font-size: 15px; }
 .dbody p { margin: 0 0 12px; }
 .dbody ul { margin: 0 0 12px; padding-left: 1.2em; } .dbody li { margin: 4px 0; }
-.block { display: flex; gap: 12px; align-items: flex-start; background: #07090d; border: 1px solid var(--line); border-radius: 10px; padding: 12px 12px 12px 16px; margin: 0 0 14px; }
+.block { display: flex; gap: 12px; align-items: flex-start; background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px 12px 12px 16px; margin: 0 0 14px; }
 .block pre { flex: 1; min-width: 0; margin: 0; font-size: 13px; line-height: 1.8; overflow-x: auto; color: var(--fg-2); }
 .block .c { color: var(--dim); }
 .tbl { overflow-x: auto; margin: 0 0 12px; }
@@ -275,6 +358,10 @@ footer nav { display: flex; flex-wrap: wrap; gap: 8px 20px; }
       <a class="opt" href="#commands">命令</a>
       <a href="#more">安装说明</a>
       <a class="gh" href="https://github.com/rebang-today/rebang-cli"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
+      <button class="theme-toggle" type="button" data-theme-toggle aria-label="切换明暗模式" title="切换明暗模式">
+        <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+        <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
     </nav>
   </div>
 </header>
@@ -510,6 +597,12 @@ rebang update --check    <span class="c"># 只检查是否有新版本</span></p
 (function () {
   'use strict';
   var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* 明暗切换：与主站开关一致，只在明暗之间切换，并写入全站共享的偏好 */
+  var toggle = document.querySelector('[data-theme-toggle]');
+  if (toggle) toggle.addEventListener('click', function () {
+    window.rbTheme.set(document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light');
+  });
 
   /* 安装方式切换：两处安装框联动，Windows 访客默认选中 PowerShell */
   var installers = document.querySelectorAll('[data-installer]');
