@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -78,6 +79,8 @@ type MenuTab struct {
 
 // allTabs 汇总全部菜单下的 Tab。同一个 Tab 可能出现在多个菜单中，按 KEY 去重并保留首次出现的顺序，
 // 让 Agent 一次拿到可用于 list --tab、search --source 的全部 KEY，不必先查菜单再逐个查 Tab。
+const allTabsInterval = 250 * time.Millisecond
+
 func allTabs(ctx context.Context, c *api.Client) ([]MenuTab, error) {
 	menus, err := c.Menus(ctx)
 	if err != nil {
@@ -85,7 +88,15 @@ func allTabs(ctx context.Context, c *api.Client) ([]MenuTab, error) {
 	}
 	out := []MenuTab{}
 	index := map[string]int{}
-	for _, m := range menus {
+	for i, m := range menus {
+		// 服务端按 CLI 令牌限流（每秒 5 次），菜单逐个请求时留出间隔，避免连续请求被拒。
+		if i > 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(allTabsInterval):
+			}
+		}
 		tabs, err := c.MenuTabs(ctx, m.ID)
 		if err != nil {
 			return nil, api.MapError(err)
