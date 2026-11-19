@@ -24,7 +24,7 @@ func noticeEnv(t *testing.T) *harness {
 	if err := os.MkdirAll(ag.Home, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := skill.Install(ag.Dir(), "0.9.0", false); err != nil {
+	if err := skill.Install(ag, "0.9.0", false); err != nil {
 		t.Fatal(err)
 	}
 	return h

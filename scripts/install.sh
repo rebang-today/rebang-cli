@@ -76,6 +76,8 @@ detect_agents() {
 	[ -d "$HOME/.claude" ] && names="${names:+${names}、}Claude Code"
 	[ -d "$HOME/.codex" ] && names="${names:+${names}、}Codex"
 	[ -d "$HOME/.agents" ] && names="${names:+${names}、}~/.agents"
+	[ -d "$HOME/.cursor" ] && names="${names:+${names}、}Cursor"
+	[ -d "$HOME/.gemini" ] && names="${names:+${names}、}Gemini CLI"
 	printf '%s' "$names"
 }
 
@@ -171,7 +173,7 @@ main() {
 	say "开始使用："
 	say "  rebang               进入交互界面"
 	if [ "$skill" != yes ]; then
-		say "  rebang skill install 安装 Agent Skill，让 Claude Code、Codex 等使用今日热榜"
+		say "  rebang skill install 安装 Agent Skill，让 Claude Code、Codex、Cursor 等使用今日热榜"
 	fi
 	say ""
 	say "可选：rebang auth login 登录后可用我的关注、内容监控等功能"

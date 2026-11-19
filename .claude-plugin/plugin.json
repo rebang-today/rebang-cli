@@ -1,0 +1,12 @@
+{
+  "name": "rebang",
+  "description": "今日热榜（rebang.today）：让 Agent 查询微博、知乎、抖音、B 站、GitHub 等上百个中文平台的实时热榜、历史热点与 AI 总结。需要本机安装 rebang 命令行。",
+  "author": {
+    "name": "rebang.today",
+    "url": "https://rebang.today"
+  },
+  "homepage": "https://cli.rebang.today",
+  "repository": "https://github.com/rebang-today/rebang-cli",
+  "license": "Apache-2.0",
+  "keywords": ["rebang", "热榜", "trending", "china", "news"]
+}

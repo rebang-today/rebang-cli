@@ -1,0 +1,14 @@
+{
+  "name": "rebang-today",
+  "owner": {
+    "name": "rebang.today",
+    "url": "https://rebang.today"
+  },
+  "plugins": [
+    {
+      "name": "rebang",
+      "source": "./",
+      "description": "今日热榜命令行手册与热榜话题研究 skill。需要本机安装 rebang 命令行：https://cli.rebang.today"
+    }
+  ]
+}

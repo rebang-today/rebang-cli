@@ -22,6 +22,8 @@ function Get-RebangAgents {
     if (Test-Path (Join-Path $HOME '.claude')) { $names += 'Claude Code' }
     if (Test-Path (Join-Path $HOME '.codex')) { $names += 'Codex' }
     if (Test-Path (Join-Path $HOME '.agents')) { $names += '~/.agents' }
+    if (Test-Path (Join-Path $HOME '.cursor')) { $names += 'Cursor' }
+    if (Test-Path (Join-Path $HOME '.gemini')) { $names += 'Gemini CLI' }
     return $names
 }
 
@@ -110,7 +112,7 @@ function Install-Rebang([string[]]$opts) {
         Write-Host '开始使用：'
         Write-Host '  rebang               进入交互界面'
         if ($skill -ne 'yes') {
-            Write-Host '  rebang skill install 安装 Agent Skill，让 Claude Code、Codex 等使用今日热榜'
+            Write-Host '  rebang skill install 安装 Agent Skill，让 Claude Code、Codex、Cursor 等使用今日热榜'
         }
         Write-Host ''
         Write-Host '可选：rebang auth login 登录后可用我的关注、内容监控等功能'

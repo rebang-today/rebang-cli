@@ -70,14 +70,79 @@ func resolveMenu(ctx context.Context, c *api.Client, s string) (api.Menu, error)
 	return api.Menu{}, errs.New(errs.ExitUsage, errs.CodeInvalidArgument, fmt.Sprintf("找不到菜单 %q", s), "运行 rebang menus 查看可用菜单")
 }
 
+// MenuTab 是 tabs --all 输出的 Tab，Menus 为它出现的菜单 KEY。
+type MenuTab struct {
+	api.Tab
+	Menus []string `json:"menus"`
+}
+
+// allTabs 汇总全部菜单下的 Tab。同一个 Tab 可能出现在多个菜单中，按 KEY 去重并保留首次出现的顺序，
+// 让 Agent 一次拿到可用于 list --tab、search --source 的全部 KEY，不必先查菜单再逐个查 Tab。
+func allTabs(ctx context.Context, c *api.Client) ([]MenuTab, error) {
+	menus, err := c.Menus(ctx)
+	if err != nil {
+		return nil, api.MapError(err)
+	}
+	out := []MenuTab{}
+	index := map[string]int{}
+	for _, m := range menus {
+		tabs, err := c.MenuTabs(ctx, m.ID)
+		if err != nil {
+			return nil, api.MapError(err)
+		}
+		for _, t := range tabs {
+			if i, ok := index[t.Key]; ok {
+				out[i].Menus = append(out[i].Menus, m.Key)
+				if len(out[i].Children) == 0 {
+					out[i].Children = t.Children
+				}
+				continue
+			}
+			index[t.Key] = len(out)
+			out = append(out, MenuTab{Tab: t, Menus: []string{m.Key}})
+		}
+	}
+	return out, nil
+}
+
+func subTabText(t api.Tab) string {
+	subs := make([]string, 0, len(t.Children))
+	for _, s := range t.Children {
+		subs = append(subs, s.Key+"("+s.Name+")")
+	}
+	return strings.Join(subs, " ")
+}
+
 func newTabsCmd(a *App) *cobra.Command {
 	var menu string
+	var all bool
 	cmd := &cobra.Command{
-		Use:   "tabs --menu <id>",
+		Use:   "tabs --menu <id> | --all",
 		Short: "列出菜单下的 Tab 与二级 Tab",
-		Args:  cobra.NoArgs,
+		Example: `  rebang tabs --menu tech
+  rebang tabs --all -o json   # 全部菜单的 Tab，适合一次查出所有 Tab KEY`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c := a.Client()
+			if all {
+				if menu != "" {
+					return errs.Usage("--menu 与 --all 不能同时使用")
+				}
+				tabs, err := allTabs(cmd.Context(), c)
+				if err != nil {
+					return err
+				}
+				rows := [][]string{}
+				for _, t := range tabs {
+					rows = append(rows, []string{t.Key, t.Name, strings.Join(t.Menus, " "), subTabText(t.Tab)})
+				}
+				return a.Writer().Write(output.Result{
+					Data:    map[string]any{"tabs": tabs},
+					Columns: []output.Column{{Title: "TAB", Kind: output.KindAccent}, {Title: "名称"}, {Title: "菜单", Kind: output.KindDim}, {Title: "二级 TAB", Shrink: true, Kind: output.KindDim}},
+					Rows:    rows,
+					Footer:  footer(a, "查看榜单：rebang list --tab <TAB> [--sub-tab <二级 TAB>]"),
+				})
+			}
 			m, err := resolveMenu(cmd.Context(), c, menu)
 			if err != nil {
 				return err
@@ -88,11 +153,7 @@ func newTabsCmd(a *App) *cobra.Command {
 			}
 			rows := [][]string{}
 			for _, t := range tabs {
-				subs := make([]string, 0, len(t.Children))
-				for _, s := range t.Children {
-					subs = append(subs, s.Key+"("+s.Name+")")
-				}
-				rows = append(rows, []string{t.Key, t.Name, strings.Join(subs, " ")})
+				rows = append(rows, []string{t.Key, t.Name, subTabText(t)})
 			}
 			return a.Writer().Write(output.Result{
 				Data:    map[string]any{"menu_id": m.ID, "tabs": tabs},
@@ -103,6 +164,7 @@ func newTabsCmd(a *App) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&menu, "menu", "", "菜单 ID、KEY 或名称")
+	cmd.Flags().BoolVar(&all, "all", false, "列出全部菜单的 Tab（按 KEY 去重，menus 为所属菜单）")
 	return cmd
 }
 

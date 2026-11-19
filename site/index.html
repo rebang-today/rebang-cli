@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>rebang CLI · 今日热榜命令行</title>
-<meta name="description" content="今日热榜官方命令行：在终端浏览微博、知乎、B 站、GitHub 等全网热榜，搜索热点、阅读 AI 总结；输出 JSON，内置 Agent Skill，Claude Code、Codex 可直接使用。">
+<title>rebang · 今日热榜 Agent Skill</title>
+<meta name="description" content="今日热榜官方 Agent Skill 与命令行：一句话装进 Claude Code、Codex、Cursor，让你的 Agent 查询微博、知乎、抖音、B 站、GitHub 等上百个中文平台的实时热榜、历史热点与 AI 总结。">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#0a0c11">
 <script>
@@ -342,21 +342,62 @@ footer nav { display: flex; flex-wrap: wrap; gap: 8px 20px; }
   .reveal { opacity: 1; transform: none; }
   .term-body .ln { opacity: 1; transform: none; }
 }
+/* 一句话安装 */
+.say { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--r); box-shadow: 0 20px 60px -30px var(--shadow); max-width: 600px; }
+.say-head { display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.say-head b { color: var(--fg); font-weight: 600; }
+.say .cmdline pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14.5px; line-height: 1.6; }
+.say .cmdline pre::before { content: none; }
+.cta .say { margin: 0 auto; text-align: left; }
+.card .block pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* 应用场景 */
+.ask { display: inline-block; font-size: 14.5px; padding: 8px 12px; border-radius: 12px; background: rgba(91,140,255,.14); border: 1px solid rgba(91,140,255,.28); color: var(--fg) !important; margin: 0 0 14px !important; }
+.steps { list-style: none; margin: 0; padding: 0; font: 12.5px/1.9 var(--mono); color: var(--muted); }
+.steps li { display: flex; gap: 8px; min-width: 0; }
+.steps li::before { content: "●"; color: var(--green); flex: none; }
+.steps li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mode .out { margin: 14px 0 0; padding-top: 12px; border-top: 1px dashed var(--line-2); font-size: 14px; color: var(--fg-2); }
+.mode .tag { font: 11px var(--sans); color: var(--hot-2); border: 1px solid rgba(255,138,61,.35); border-radius: 4px; padding: 0 5px; margin-left: 8px; vertical-align: 1px; }
+.soon { margin: 16px 0 0; color: var(--muted); font-size: 14px; }
+
+/* 工作原理 */
+.tree { font: 13px/1.9 var(--mono); background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 0; color: var(--fg-2); overflow-x: auto; white-space: pre; }
+.tree .k { color: var(--blue); } .tree .c { color: var(--dim); } .tree .s { color: var(--hot-2); }
+.card h3 { margin-bottom: 12px; }
+.card > p { color: var(--muted); font-size: 14.5px; margin: 0 0 16px; }
+.card > p a { color: var(--fg-2); }
+.flow { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; counter-reset: f; }
+.flow li { counter-increment: f; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; font-size: 14.5px; color: var(--fg-2); }
+.flow li::before { content: counter(f); width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font: 600 12px var(--mono); color: var(--hot); border: 1px solid var(--line-2); background: var(--tint-2); }
+.flow li b { color: var(--fg); font-weight: 600; }
+.feats.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+/* 安装方式 */
+.ways { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; margin-bottom: 16px; }
+.ways .installer { max-width: none; box-shadow: none; background: var(--bg-2); }
+.modes.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.fine a { color: var(--fg-2); }
+@media (max-width: 960px) {
+  .feats.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ways, .modes.two { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) { .feats.four { grid-template-columns: minmax(0, 1fr); } }
 </style>
 </head>
 <body>
 
 <header class="nav">
   <div class="wrap">
-    <a class="brand" href="#top" aria-label="rebang CLI 首页">
+    <a class="brand" href="#top" aria-label="rebang 首页">
       <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#ff5a36"/><path d="M9 11l6 5-6 5" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M17 22h7" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg>
-      rebang <small id="ver">CLI</small>
+      rebang <small id="ver">Skill</small>
     </a>
     <nav aria-label="页面导航">
-      <a class="opt" href="#modes">用法</a>
-      <a class="opt2" href="#agent">Agent</a>
-      <a class="opt" href="#commands">命令</a>
-      <a href="#more">安装说明</a>
+      <a class="opt2" href="#apps">能做什么</a>
+      <a class="opt" href="#how">工作原理</a>
+      <a href="#install">安装</a>
+      <a class="opt" href="#cli">命令行</a>
       <a class="gh" href="https://github.com/rebang-today/rebang-cli"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
       <button class="theme-toggle" type="button" data-theme-toggle aria-label="切换明暗模式" title="切换明暗模式">
         <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
@@ -369,36 +410,28 @@ footer nav { display: flex; flex-wrap: wrap; gap: 8px 20px; }
 <main id="top">
   <div class="wrap hero">
     <div>
-      <span class="eyebrow rise"><span class="dot"></span>今日热榜官方命令行 · 开源</span>
-      <h1 class="rise d1">全网热榜，<br><span class="nw"><span class="hl">一行命令</span>直达。</span></h1>
-      <p class="lead rise d2">微博、知乎、B 站、GitHub 等 <b>上百个榜单</b>，在终端里浏览、搜索、读 AI 总结。默认输出 JSON，还内置 Agent Skill，<b>Claude Code、Codex</b> 装上就能用。</p>
+      <span class="eyebrow rise"><span class="dot"></span>今日热榜官方 Agent Skill · 开源</span>
+      <h1 class="rise d1">让你的 Agent<br><span class="nw">读懂<span class="hl">今日热点</span>。</span></h1>
+      <p class="lead rise d2">把微博、知乎、抖音、B 站、GitHub 等<b>上百个中文平台的热榜</b>交给 Claude Code、Codex、Cursor。实时榜单、历史热点、AI 总结，你只管提问，<b>Agent 自己查、自己整理</b>。</p>
 
-      <div class="installer rise d3" data-installer>
-        <div class="os-tabs" role="tablist" aria-label="选择安装方式">
-          <button role="tab" aria-selected="true" data-os="unix">macOS / Linux</button>
-          <button role="tab" aria-selected="false" data-os="win">Windows</button>
-          <button role="tab" aria-selected="false" data-os="brew">Homebrew</button>
-        </div>
-        <div class="cmdline" data-panel="unix"><pre>curl -fsSL https://cli.rebang.today/install.sh | sh</pre><button class="copy" type="button">复制</button></div>
-        <div class="cmdline ps" data-panel="win" hidden><pre>irm https://cli.rebang.today/install.ps1 | iex</pre><button class="copy" type="button">复制</button></div>
-        <div class="cmdline" data-panel="brew" hidden><pre>brew install rebang-today/tap/rebang</pre><button class="copy" type="button">复制</button></div>
-        <p class="install-note" data-note="unix">安装到 <code>~/.local/bin</code>，检测到 Claude Code / Codex 时会询问是否一并安装 Agent Skill。</p>
-        <p class="install-note" data-note="win" hidden>在 PowerShell 中运行，安装后重新打开终端即可使用。</p>
-        <p class="install-note" data-note="brew" hidden>适用于 macOS，之后用 <code>brew upgrade rebang</code> 升级。</p>
+      <div class="say rise d3">
+        <div class="say-head"><b>复制这句话，发给你的 Agent</b></div>
+        <div class="cmdline"><pre id="say-hero">帮我安装今日热榜 CLI 和 Skill：https://cli.rebang.today/agent.md</pre><button class="copy" type="button" data-target="say-hero">复制</button></div>
+        <p class="install-note">Agent 会读取安装说明，装好程序与 Skill 并验证。不需要注册，也不需要登录。</p>
       </div>
       <div class="hero-links rise d4">
-        <a href="#agent">让 Agent 帮你装 →</a>
-        <a href="#start">装好之后做什么 →</a>
+        <a href="#apps">能帮你做什么 →</a>
+        <a href="#install">自己动手安装 →</a>
       </div>
     </div>
 
-    <div class="term rise d2" aria-label="终端演示">
-      <div class="term-bar"><i></i><i></i><i></i><span>~ — rebang</span></div>
+    <div class="term rise d2" aria-label="Agent 对话演示">
+      <div class="term-bar"><i></i><i></i><i></i><span>你的 Agent</span></div>
       <div class="term-body" id="screen" aria-live="off"></div>
       <div class="scenes" role="group" aria-label="切换演示">
-        <button type="button" data-scene="0" aria-pressed="true">看榜单</button>
-        <button type="button" data-scene="1" aria-pressed="false">搜热点</button>
-        <button type="button" data-scene="2" aria-pressed="false">接管道</button>
+        <button type="button" data-scene="0" aria-pressed="true">看热点</button>
+        <button type="button" data-scene="1" aria-pressed="false">研究话题</button>
+        <button type="button" data-scene="2" aria-pressed="false">读一条</button>
         <span class="note">示意数据</span>
       </div>
     </div>
@@ -412,109 +445,128 @@ footer nav { display: flex; flex-wrap: wrap; gap: 8px 20px; }
   </div>
 
   <div class="wrap">
-    <section id="modes">
-      <p class="kicker">// 三种用法</p>
-      <h2>人用、脚本用、Agent 用。</h2>
-      <p class="sub">同一个 <code>rebang</code>：直接运行是交互界面；接在管道里自动输出 JSON；装上 Skill，AI Agent 就知道怎么用它。</p>
-      <div class="modes" id="start">
+    <section id="apps">
+      <p class="kicker">// 能做什么</p>
+      <h2>你提问，Agent 去热榜上找答案。</h2>
+      <p class="sub">装好之后不用记任何命令。下面是几种常见的问法，以及 Agent 在背后做的事。</p>
+      <div class="modes">
         <div class="mode reveal">
-          <span class="ix">01 · 交互界面</span>
-          <h3>像看网页一样刷热榜</h3>
-          <p>不带参数运行，进入全屏界面，按菜单、Tab 浏览榜单，支持键盘与鼠标。</p>
-<pre class="snip"><span class="p">$</span> rebang</pre>
-          <div class="keys"><kbd>↑</kbd><kbd>↓</kbd> 移动 <kbd>←</kbd><kbd>→</kbd> 来源 / 榜单 <kbd>tab</kbd> 子榜 <kbd>/</kbd> 搜索 <kbd>↵</kbd> 打开</div>
+          <span class="ix">01 · 看热点</span>
+          <h3>今天大家在聊什么</h3>
+          <p class="ask">今天微博和知乎都在聊什么？挑五条说说</p>
+          <ul class="steps">
+            <li><span>rebang list --tab weibo -n 20</span></li>
+            <li><span>rebang list --tab zhihu -n 20</span></li>
+            <li><span>rebang summary &lt;item_key&gt;</span></li>
+          </ul>
+          <p class="out">跨平台合并同一件事，挑出最热的几条，每条附 AI 总结的要点和原链接。</p>
         </div>
         <div class="mode reveal">
-          <span class="ix">02 · 命令与脚本</span>
-          <h3>一条命令拿到结构化结果</h3>
-          <p>终端里是表格，进管道就是 JSON，也可以用 <code>-o json|md|table</code> 指定。</p>
-<pre class="snip"><span class="p">$</span> rebang list --tab zhihu
-<span class="p">$</span> rebang search 大模型
-<span class="p">$</span> rebang summary &lt;item_key&gt;</pre>
+          <span class="ix">02 · 研究话题</span>
+          <h3>一个话题的来龙去脉</h3>
+          <p class="ask">最近一周大家怎么看新能源车降价？</p>
+          <ul class="steps">
+            <li><span>rebang search 新能源车 --days 7</span></li>
+            <li><span>rebang search 降价 --days 7</span></li>
+            <li><span>rebang summary &lt;item_key&gt;</span></li>
+          </ul>
+          <p class="out">输出一份带来源的简报：上过哪些平台的热榜、发生了什么、各方观点和网友反应。</p>
         </div>
         <div class="mode reveal">
-          <span class="ix">03 · AI Agent</span>
-          <h3>让 Agent 读懂今天的热点</h3>
-          <p>内置 Agent Skill，装好后直接用自然语言问，Agent 自己去查榜、搜索、读总结。</p>
-<pre class="snip"><span class="p">$</span> rebang skill install
-<span class="s">✓</span> 已安装到 claude、codex</pre>
+          <span class="ix">03 · 盯关键词<span class="tag">需登录</span></span>
+          <h3>我关心的事有没有新动静</h3>
+          <p class="ask">我监控的关键词今天有什么新内容？</p>
+          <ul class="steps">
+            <li><span>rebang monitor hits --unread</span></li>
+            <li><span>rebang summary &lt;item_key&gt;</span></li>
+          </ul>
+          <p class="out">按监控计划分组汇总新命中的内容。第一次用到时，Agent 会把授权链接发给你确认登录。</p>
         </div>
       </div>
+      <p class="soon">更多应用陆续加入：每日热点简报、监控摘要……</p>
     </section>
 
-    <section id="agent">
-      <p class="kicker">// Agent Skill</p>
-      <h2>把今日热榜交给你的 Agent。</h2>
-      <p class="sub">Skill 告诉 Agent 有哪些命令、怎么找榜单、什么时候需要登录。你只管提问。</p>
+    <section id="how">
+      <p class="kicker">// 工作原理</p>
+      <h2>CLI 负责取数，Skill 教 Agent 怎么用。</h2>
+      <p class="sub"><code>rebang</code> 命令行连接今日热榜，输出结构化的 JSON；随它一起发布的 Skill 是写给 Agent 的说明书，分成两层。</p>
 
       <div class="agent">
-        <div class="card reveal" aria-label="对话示意">
-          <div class="chat">
-            <div class="bubble me">今天科技圈在聊什么？挑三条跟我说说</div>
-            <div class="tool"><b>●</b><span>rebang list --tab top-tech -n 10 -o json</span></div>
-            <div class="tool"><b>●</b><span>rebang summary &lt;item_key&gt; -o json</span></div>
-            <div class="bubble ai">科技热榜今天最受关注的三条：
-              <ol><li>…… 一句话要点</li><li>…… 一句话要点</li><li>…… 一句话要点</li></ol>
-              <span class="m">需要的话我可以展开某一条的 AI 总结和网友观点。</span>
-            </div>
-          </div>
-        </div>
-
         <div class="card reveal">
-          <div class="prompt-head">
-            <h3>复制给 Agent，让它帮你装好</h3>
-            <button class="copy" type="button" data-target="agent-prompt">复制</button>
-          </div>
-<pre class="prompt" id="agent-prompt">请帮我安装今日热榜命令行 rebang，并把它的 Agent Skill 装到本机：
-1. 运行 curl -fsSL https://cli.rebang.today/install.sh | sh -s -- --with-skill
-   （Windows 用 PowerShell：$env:REBANG_INSTALL_SKILL=1; irm https://cli.rebang.today/install.ps1 | iex）
-2. 运行 rebang skill install，确认 Skill 已安装（rebang skill status）。
-3. 运行 rebang list --tab zhihu -n 5 -o json 验证可用，这一步不需要登录。
-不需要登录。以后用到我的关注、内容监控等功能时，再按需帮我登录。</pre>
-          <div class="agents" aria-label="支持的 Agent">
-            <span>Claude Code</span><span>Codex</span><span>~/.agents/skills 兼容 Agent</span>
+          <h3>两层 Skill</h3>
+          <p>手册让 Agent 知道每个命令能做什么；应用把命令组合成一件完整的事，并规定输出格式。</p>
+<pre class="tree"><span class="k">rebang/</span>             <span class="c"># 命令行手册</span>
+  SKILL.md          <span class="c"># 调用约定、退出码、权限</span>
+  references/       <span class="c"># 浏览 · 搜索 · AI 总结 · 账号 · 监控</span>
+<span class="k">rebang-research/</span>    <span class="c"># 应用：话题研究简报</span>
+<span class="s">rebang-…/</span>           <span class="c"># 更多应用</span></pre>
+        </div>
+        <div class="card reveal">
+          <h3>一次提问的过程</h3>
+          <ol class="flow">
+            <li><span>你用自然语言提问，Agent 根据 Skill 判断<b>该用哪些命令</b>。</span></li>
+            <li><span>Agent 调用 <code>rebang</code>，拿到榜单、搜索结果和 AI 总结的 <b>JSON</b>。</span></li>
+            <li><span>Agent 筛选、合并、整理，回答里<b>每条都附原链接</b>和查询时间。</span></li>
+            <li><span>遇到需要登录或会员的功能，Agent 会<b>先问你</b>，不会自作主张。</span></li>
+          </ol>
+        </div>
+      </div>
+
+      <div class="feats four">
+        <div class="feat reveal"><h3>只引用真实内容</h3><p>标题、热度和链接都来自命令结果，Skill 要求 Agent 不编造。</p></div>
+        <div class="feat reveal"><h3>按需登录</h3><p>热榜、搜索、AI 总结都不用登录。用到关注、监控时，Agent 才把授权链接转给你。</p></div>
+        <div class="feat reveal"><h3>随版本同步</h3><p><code>rebang update</code> 升级程序时，已安装的 Skill 一起更新。</p></div>
+        <div class="feat reveal"><h3>不擅自升级</h3><p>有新版本时 Agent 只在回答末尾提醒你，不会自己动手。</p></div>
+      </div>
+    </section>
+
+    <section id="install">
+      <p class="kicker">// 安装</p>
+      <h2>一句话，或者自己动手。</h2>
+      <p class="sub">支持 Claude Code、Codex、Cursor、Gemini CLI，以及读取 <code>~/.agents/skills</code> 的 Agent。</p>
+
+      <div class="ways">
+        <div class="card reveal">
+          <h3>让 Agent 安装（推荐）</h3>
+          <p>把这句话发给你的 Agent。它会读取 <a href="/agent.md"><code>agent.md</code></a>，按你的系统装好程序与 Skill，再用一条命令验证。</p>
+          <div class="block"><pre id="say-install">帮我安装今日热榜 CLI 和 Skill：https://cli.rebang.today/agent.md</pre><button class="copy" type="button" data-target="say-install">复制</button></div>
+        </div>
+        <div class="card reveal">
+          <h3>自己安装</h3>
+          <p>安装程序；检测到本机的 Agent 时会询问是否一并安装 Skill，直接回车即安装。</p>
+          <div class="installer" data-installer>
+            <div class="os-tabs" role="tablist" aria-label="选择安装方式">
+              <button role="tab" aria-selected="true" data-os="unix">macOS / Linux</button>
+              <button role="tab" aria-selected="false" data-os="win">Windows</button>
+              <button role="tab" aria-selected="false" data-os="brew">Homebrew</button>
+            </div>
+            <div class="cmdline" data-panel="unix"><pre>curl -fsSL https://cli.rebang.today/install.sh | sh</pre><button class="copy" type="button">复制</button></div>
+            <div class="cmdline ps" data-panel="win" hidden><pre>irm https://cli.rebang.today/install.ps1 | iex</pre><button class="copy" type="button">复制</button></div>
+            <div class="cmdline" data-panel="brew" hidden><pre>brew install rebang-today/tap/rebang</pre><button class="copy" type="button">复制</button></div>
+            <p class="install-note" data-note="unix">安装到 <code>~/.local/bin</code>。之后运行 <code>rebang skill install</code> 也可以随时安装 Skill。</p>
+            <p class="install-note" data-note="win" hidden>在 PowerShell 中运行，安装后重新打开终端即可使用。</p>
+            <p class="install-note" data-note="brew" hidden>Homebrew 只安装程序，之后运行 <code>rebang skill install</code> 安装 Skill。</p>
           </div>
         </div>
       </div>
 
-      <div class="feats">
-        <div class="feat reveal"><h3>随版本同步</h3><p>Skill 内嵌在程序里，<code>rebang update</code> 升级后自动同步已安装的 Skill。</p></div>
-        <div class="feat reveal"><h3>按需登录</h3><p>热榜、搜索、AI 总结都不用登录。用到关注、监控时，Agent 才会把授权链接转给你。</p></div>
-        <div class="feat reveal"><h3>不擅自升级</h3><p>有新版本时 JSON 里附带 <code>_notice</code>，Agent 会提醒你，不会自己动手。</p></div>
-      </div>
-    </section>
-
-    <section id="commands">
-      <p class="kicker">// 命令一览</p>
-      <h2>常用命令</h2>
-      <p class="sub">每个命令的完整参数见 <code>rebang &lt;命令&gt; --help</code>。</p>
-      <div class="cmds">
-        <div><code>rebang list</code><p>查看榜单，如 <code>--tab weibo -n 10</code></p></div>
-        <div><code>rebang search</code><p>按关键词搜索热榜条目</p></div>
-        <div><code>rebang summary</code><p>条目的 AI 总结：要点、经过、观点、网友怎么看</p></div>
-        <div><code>rebang menus</code><p>菜单：综合、科技、娱乐、开发、财经…</p></div>
-        <div><code>rebang tabs</code><p>菜单下的榜单与二级 Tab，如 <code>--menu tech</code></p></div>
-        <div><code>rebang open</code><p>用浏览器打开第 N 条</p></div>
-        <div><code>rebang following</code><span class="tag">需登录</span><p>我关注的榜单</p></div>
-        <div><code>rebang monitor</code><span class="tag">需登录</span><p>内容监控的计划与命中内容</p></div>
-        <div><code>rebang auth login</code><p>浏览器授权登录，无桌面环境加 <code>--no-browser</code></p></div>
-        <div><code>rebang skill</code><p>安装、查看、卸载 Agent Skill</p></div>
-        <div><code>rebang update</code><p>升级到最新版本，校验签名后替换</p></div>
-        <div><code>rebang doctor</code><p>环境诊断，排查安装与连接问题</p></div>
-      </div>
-      <div class="pipe"><pre>rebang list --tab weibo -n 10 | jq -r '.items[] | "\(.rank). \(.title)"'</pre><button class="copy" type="button">复制</button></div>
-      <p class="fine">结果写标准输出，提示写标准错误；退出码区分未登录（3）、需要会员（4）、限流（5）、网络错误（6）等情况，方便脚本处理。</p>
-    </section>
-
-    <section id="more">
-      <p class="kicker">// 安装说明</p>
-      <h2>安装、升级与卸载</h2>
-      <p class="sub">需要指定目录、版本，或者想手动校验安装包，看这里。</p>
       <div class="details">
+        <details>
+          <summary>已经在用 skills 工具或 Claude Code 插件 <small>只装 Skill</small></summary>
+          <div class="dbody">
+            <p>用 <code>npx skills</code> 安装到任意支持 Agent Skills 的 Agent：</p>
+            <div class="block"><pre>npx skills add rebang-today/rebang-cli -g</pre><button class="copy" type="button">复制</button></div>
+            <p>或者在 Claude Code 中通过插件市场安装：</p>
+            <div class="block"><pre>/plugin marketplace add rebang-today/rebang-cli
+/plugin install rebang@rebang-today</pre><button class="copy" type="button">复制</button></div>
+            <p>这两种方式只安装 Skill，第一次使用时 Agent 会按 Skill 的说明安装 <code>rebang</code> 程序。Skill 由对应工具负责更新；不要再用 <code>rebang skill install</code> 重复安装同名 Skill。</p>
+          </div>
+        </details>
+
         <details>
           <summary>安装选项 <small>Agent Skill、安装目录、指定版本</small></summary>
           <div class="dbody">
-            <p>检测到本机有 <code>~/.claude</code>、<code>~/.codex</code> 或 <code>~/.agents</code> 时，安装脚本会询问是否安装 Agent Skill，直接回车即安装；没有终端可询问时（如 CI）不安装。也可以明确指定：</p>
+            <p>检测到本机有 <code>~/.claude</code>、<code>~/.codex</code>、<code>~/.agents</code>、<code>~/.cursor</code> 或 <code>~/.gemini</code> 时，安装脚本会询问是否安装 Agent Skill；没有终端可询问时（如 CI）不安装。也可以明确指定：</p>
             <div class="block"><pre>curl -fsSL https://cli.rebang.today/install.sh | sh -s -- --with-skill   <span class="c"># 或 --no-skill</span></pre><button class="copy" type="button">复制</button></div>
             <div class="tbl"><table>
               <tr><th>环境变量</th><th>说明</th></tr>
@@ -531,7 +583,7 @@ footer nav { display: flex; flex-wrap: wrap; gap: 8px 20px; }
           <div class="dbody">
             <div class="block"><pre>rebang update            <span class="c"># 升级到最新版本，并同步已安装的 Agent Skill</span>
 rebang update --check    <span class="c"># 只检查是否有新版本</span></pre><button class="copy" type="button">复制</button></div>
-            <p>通过 Homebrew 安装的请使用 <code>brew upgrade rebang</code>。</p>
+            <p>通过 Homebrew 安装的请使用 <code>brew upgrade rebang</code>，再运行 <code>rebang skill install</code> 同步 Skill。</p>
           </div>
         </details>
 
@@ -540,7 +592,7 @@ rebang update --check    <span class="c"># 只检查是否有新版本</span></p
           <div class="dbody">
             <div class="tbl"><table>
               <tr><th>步骤</th><th>macOS / Linux</th><th>Windows</th></tr>
-              <tr><td>退出登录（可选）</td><td colspan="2"><code>rebang auth logout</code>，在服务端吊销本机的登录</td></tr>
+              <tr><td>退出登录（可选）</td><td colspan="2"><code>rebang auth logout</code>，让这台设备的登录失效</td></tr>
               <tr><td>移除 Agent Skill</td><td colspan="2"><code>rebang skill uninstall</code></td></tr>
               <tr><td>删除程序</td><td><code>rm ~/.local/bin/rebang</code><br>Homebrew：<code>brew uninstall rebang</code></td><td>删除 <code>%LOCALAPPDATA%\Programs\rebang</code></td></tr>
               <tr><td>删除配置与凭证</td><td><code>rm -r ~/.config/rebang</code></td><td>删除 <code>%AppData%\rebang</code></td></tr>
@@ -565,18 +617,35 @@ rebang update --check    <span class="c"># 只检查是否有新版本</span></p
       </div>
     </section>
 
-    <div class="cta reveal">
-      <h2>现在就试试。</h2>
-      <p>不需要注册，装好就能看热榜。</p>
-      <div class="installer" data-installer>
-        <div class="os-tabs" role="tablist" aria-label="选择安装方式">
-          <button role="tab" aria-selected="true" data-os="unix">macOS / Linux</button>
-          <button role="tab" aria-selected="false" data-os="win">Windows</button>
-          <button role="tab" aria-selected="false" data-os="brew">Homebrew</button>
+    <section id="cli">
+      <p class="kicker">// 命令行</p>
+      <h2>你自己也可以直接用。</h2>
+      <p class="sub">Agent 用的就是这个命令行。在终端里它有交互界面，也适合写进脚本。</p>
+      <div class="modes two">
+        <div class="mode reveal">
+          <span class="ix">交互界面</span>
+          <h3>在终端里刷热榜</h3>
+          <p>不带参数运行，按分类、榜单浏览，预览 AI 总结，支持键盘与鼠标。</p>
+<pre class="snip"><span class="p">$</span> rebang</pre>
+          <div class="keys"><kbd>↑</kbd><kbd>↓</kbd> 移动 <kbd>←</kbd><kbd>→</kbd> 来源 / 榜单 <kbd>tab</kbd> 子榜 <kbd>/</kbd> 搜索 <kbd>↵</kbd> 打开</div>
         </div>
-        <div class="cmdline" data-panel="unix"><pre>curl -fsSL https://cli.rebang.today/install.sh | sh</pre><button class="copy" type="button">复制</button></div>
-        <div class="cmdline ps" data-panel="win" hidden><pre>irm https://cli.rebang.today/install.ps1 | iex</pre><button class="copy" type="button">复制</button></div>
-        <div class="cmdline" data-panel="brew" hidden><pre>brew install rebang-today/tap/rebang</pre><button class="copy" type="button">复制</button></div>
+        <div class="mode reveal">
+          <span class="ix">命令与脚本</span>
+          <h3>结构化输出，接管道</h3>
+          <p>终端里是表格，进管道就是 JSON；退出码区分未登录、需要会员、限流等情况。</p>
+<pre class="snip"><span class="p">$</span> rebang list --tab weibo -n 10 | jq -r '.items[].title'
+<span class="p">$</span> rebang search 大模型
+<span class="p">$</span> rebang summary &lt;item_key&gt;</pre>
+        </div>
+      </div>
+      <p class="fine">全部命令与参数见 <a href="https://github.com/rebang-today/rebang-cli#命令">GitHub README</a>，或运行 <code>rebang &lt;命令&gt; --help</code>。</p>
+    </section>
+
+    <div class="cta reveal">
+      <h2>现在就交给你的 Agent。</h2>
+      <p>不需要注册，装好就能问。</p>
+      <div class="say">
+        <div class="cmdline"><pre id="say-cta">帮我安装今日热榜 CLI 和 Skill：https://cli.rebang.today/agent.md</pre><button class="copy" type="button" data-target="say-cta">复制</button></div>
       </div>
     </div>
   </div>
@@ -584,10 +653,11 @@ rebang update --check    <span class="c"># 只检查是否有新版本</span></p
 
 <footer>
   <div class="wrap">
-    <span>rebang CLI · Apache-2.0 开源</span>
+    <span>rebang · Apache-2.0 开源</span>
     <nav aria-label="外部链接">
       <a href="https://github.com/rebang-today/rebang-cli">GitHub</a>
       <a href="https://github.com/rebang-today/rebang-cli/releases">更新日志</a>
+      <a href="/agent.md">agent.md</a>
       <a href="https://rebang.today">今日热榜 rebang.today</a>
     </nav>
   </div>
@@ -656,49 +726,54 @@ rebang update --check    <span class="c"># 只检查是否有新版本</span></p
     }).catch(function () {});
   }
 
-  /* 终端演示（示意数据） */
+  /* Agent 对话演示（示意数据）：提问逐字输入，随后逐行显示 Agent 调用的命令与回答 */
   function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-  function pad(s, w) { var len = 0; for (var i = 0; i < s.length; i++) len += s.charCodeAt(i) >= 0x2E80 ? 2 : 1; return s + new Array(Math.max(0, w - len) + 1).join(' '); }
-  var scenes = [
-    { cmd: 'rebang list --tab weibo -n 6', out: [
-      '<span class="h">#  ' + pad('标题', 28) + '热度</span>',
-      '<span class="h">─  ' + pad('────────────────────────────', 28) + '──────────</span>',
-      '<span class="r">1</span>  ' + pad('年度流行语榜单今天公布', 28) + '<span class="n">235万热度</span>',
-      '<span class="r">2</span>  ' + pad('多地迎来今冬第一场雪', 28) + '<span class="n">181万热度</span>',
-      '<span class="r">3</span>  ' + pad('演唱会门票十秒售罄', 28) + '<span class="n">96.4万热度</span>',
-      '4  ' + pad('新能源车冬季续航实测', 28) + '<span class="n">72.0万热度</span>',
-      '5  ' + pad('这届年轻人开始攒金豆', 28) + '<span class="n">58.9万热度</span>',
-      '6  ' + pad('博物馆夜场一票难求', 28) + '<span class="n">41.3万热度</span>',
+    var scenes = [
+    { cmd: '今天科技圈在聊什么？挑三条说说', out: [
+      '<span class="s">●</span> <span class="m">rebang list --tab top-tech -n 10 -o json</span>',
+      '<span class="s">●</span> <span class="m">rebang summary 7c1e… -o json</span>',
       '',
-      '<span class="m">用浏览器打开第 N 条：rebang open N --tab weibo</span>'
+      '科技热榜今天最受关注的三条（09:30 查询）：',
+      '',
+      '<span class="r">1.</span> 某开源大模型发布新版本，多项评测登顶',
+      '   <span class="h">GitHub、知乎、36氪 同时在榜</span>',
+      '<span class="r">2.</span> 国产手机新品首销，冬季续航成讨论焦点',
+      '<span class="r">3.</span> 某平台宣布开放 API，开发者反应两极',
+      '',
+      '<span class="m">每条都附原链接，需要的话我可以展开第 1 条的观点。</span>'
     ]},
-    { cmd: 'rebang search 大模型 -n 4', out: [
-      '<span class="h">#  ' + pad('标题', 30) + pad('来源', 8) + '最后在榜</span>',
-      '<span class="h">─  ' + pad('──────────────────────────────', 30) + pad('──────', 8) + '──────────</span>',
-      '1  ' + pad('大模型价格战进入新阶段', 30) + pad('虎嗅', 8) + '<span class="m">11-16 12:21</span>',
-      '2  ' + pad('开源模型榜单又换了第一', 30) + pad('量子位', 8) + '<span class="m">11-16 11:05</span>',
-      '3  ' + pad('端侧大模型能跑多快', 30) + pad('IT之家', 8) + '<span class="m">11-16 09:47</span>',
-      '4  ' + pad('大模型应用的冬天来了吗', 30) + pad('36氪', 8) + '<span class="m">11-15 22:30</span>',
+    { cmd: '最近一周大家怎么看新能源车降价？', out: [
+      '<span class="k">◆</span> <span class="m">使用 skill：rebang-research</span>',
+      '<span class="s">●</span> <span class="m">rebang search 新能源车 --days 7 -n 50 -o json</span>',
+      '<span class="s">●</span> <span class="m">rebang search 降价 --days 7 -n 50 -o json</span>',
+      '<span class="s">●</span> <span class="m">rebang summary 3f2a… -o json</span>',
       '',
-      '<span class="m">共 1373 条结果</span>'
+      '<span class="cmd">## 新能源车降价：最近 7 天热榜简报</span>',
+      '<span class="h">查询时间 11-19 09:32 · 全部平台</span>',
+      '',
+      '<b>一句话结论</b>：讨论集中在微博和懂车帝，',
+      '老车主补偿是最大争议点。',
+      '<span class="r">1.</span> 多家车企跟进降价 <span class="h">微博 · 头条 · 36氪</span>'
     ]},
-    { cmd: "rebang list --tab zhihu -n 3 | jq '.items[0]'", out: [
-      '{',
-      '  <span class="k">"rank"</span>: <span class="n">1</span>,',
-      '  <span class="k">"title"</span>: <span class="s">"有哪些让你相见恨晚的效率工具？"</span>,',
-      '  <span class="k">"heat"</span>: <span class="s">"1203万热度"</span>,',
-      '  <span class="k">"url"</span>: <span class="s">"https://www.zhihu.com/question/…"</span>,',
-      '  <span class="k">"item_key"</span>: <span class="s">"…"</span>',
-      '}',
+    { cmd: '这条热搜是怎么回事？', out: [
+      '<span class="s">●</span> <span class="m">rebang search 多地迎来今冬第一场雪 -o json</span>',
+      '<span class="s">●</span> <span class="m">rebang summary 9b04… -o json</span>',
       '',
-      '<span class="p">$</span> <span class="cmd">rebang summary &lt;item_key&gt;</span>   <span class="m"># 读 AI 总结</span>'
+      '据今日热榜的 AI 总结：',
+      '',
+      '<span class="cmd">简述</span>  寒潮南下，<b>北方多地今天迎来初雪</b>。',
+      '<span class="cmd">经过</span>  <span class="n">07:10</span> 气象台发布寒潮预警',
+      '      <span class="n">08:30</span> 多地网友晒出雪景',
+      '<span class="cmd">网友</span>  多数在晒照片，也有人提醒出行安全',
+      '',
+      '<span class="m">原文：https://weibo.com/…</span>'
     ]}
   ];
   var screen = document.getElementById('screen');
   var sceneBtns = document.querySelectorAll('[data-scene]');
   var timer = null, current = 0, token = 0;
 
-  function prompt(cmdHtml, caret) { return '<span class="p">$</span> <span class="cmd">' + cmdHtml + '</span>' + (caret ? '<span class="caret"></span>' : ''); }
+  function prompt(cmdHtml, caret) { return '<span class="p">&gt;</span> <span class="cmd">' + cmdHtml + '</span>' + (caret ? '<span class="caret"></span>' : ''); }
   function renderStatic(i) {
     var s = scenes[i];
     screen.innerHTML = prompt(esc(s.cmd)) + '\n' + s.out.join('\n');
@@ -716,7 +791,7 @@ rebang update --check    <span class="c"># 只检查是否有新版本</span></p
         if (my !== token) return;
         var html = prompt(esc(s.cmd)) + '\n';
         for (var l = 0; l < s.out.length; l++) html += '<span class="ln" style="animation-delay:' + (l * 55) + 'ms">' + (s.out[l] || ' ') + '</span>\n';
-        screen.innerHTML = html + '<span class="ln" style="animation-delay:' + (s.out.length * 55) + 'ms"><span class="p">$</span> <span class="caret"></span></span>';
+        screen.innerHTML = html + '<span class="ln" style="animation-delay:' + (s.out.length * 55) + 'ms"><span class="p">&gt;</span> <span class="caret"></span></span>';
         timer = setTimeout(function () { if (my === token) play((i + 1) % scenes.length); }, 5200);
       }, 380);
     })();

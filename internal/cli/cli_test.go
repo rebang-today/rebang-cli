@@ -46,7 +46,12 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/v1/menus":
 		ok(map[string]any{"menus": []map[string]any{{"id": 1, "menu_name": "综合", "menu_key": "all"}, {"id": 2, "menu_name": "科技", "menu_key": "tech"}}})
 	case "/v1/tabs/menu":
-		if r.URL.Query().Get("menu_id") != "2" {
+		switch r.URL.Query().Get("menu_id") {
+		case "1":
+			ok(map[string]any{"tab_info": []map[string]any{{"id": 1, "key": "weibo", "name": "微博"}, {"id": 9, "key": "github", "name": "GitHub"}}})
+			return
+		case "2":
+		default:
 			fail(400, 1001, "params error")
 			return
 		}
@@ -249,6 +254,30 @@ func TestTabsResolvesMenuKey(t *testing.T) {
 	_, stderr, code = h.run(false, "tabs", "--menu", "nope")
 	if code != errs.ExitUsage {
 		t.Fatalf("code %d %s", code, stderr)
+	}
+}
+
+func TestTabsAll(t *testing.T) {
+	h := newHarness(t)
+	out, stderr, code := h.run(false, "tabs", "--all")
+	if code != 0 {
+		t.Fatal(stderr)
+	}
+	var v struct {
+		Tabs []struct {
+			Key   string
+			Menus []string
+			Child []struct{ Key string }
+		}
+	}
+	decode(t, out, &v)
+	// github 同时出现在综合与科技，应合并为一条并保留二级 Tab。
+	if len(v.Tabs) != 2 || v.Tabs[0].Key != "weibo" || v.Tabs[1].Key != "github" ||
+		strings.Join(v.Tabs[1].Menus, ",") != "all,tech" || len(v.Tabs[1].Child) != 1 {
+		t.Fatal(out)
+	}
+	if _, _, code := h.run(false, "tabs", "--all", "--menu", "tech"); code != errs.ExitUsage {
+		t.Fatal(code)
 	}
 }
 

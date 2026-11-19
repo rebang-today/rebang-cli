@@ -27,7 +27,8 @@ func newSkillCmd(a *App) *cobra.Command {
 		Short: "管理 Agent Skill",
 		Long: `管理随程序发布的 Agent Skill。
 
-skill 安装到各 Agent 的 skill 目录（如 ~/.claude/skills/rebang），
+rebang 是命令行手册，rebang-* 是基于它的应用（如 rebang-research 话题研究），
+作为一组安装到各 Agent 的 skill 目录（如 ~/.claude/skills/rebang），
 rebang update 升级后会自动同步已安装的 skill。`,
 	}
 	var agents []string
@@ -48,8 +49,8 @@ rebang update 升级后会自动同步已安装的 skill。`,
 		return sel, nil
 	}
 	addTargetFlags := func(c *cobra.Command) {
-		c.Flags().StringSliceVar(&agents, "agent", nil, "目标 Agent：claude、codex、agents、all（默认本机已安装的 Agent）")
-		c.Flags().StringVar(&dir, "dir", "", "自定义 skill 根目录，skill 安装到 <dir>/rebang")
+		c.Flags().StringSliceVar(&agents, "agent", nil, "目标 Agent："+strings.Join(skill.AgentNames(), "、")+"、all（默认本机已安装的 Agent）")
+		c.Flags().StringVar(&dir, "dir", "", "自定义 skill 根目录，skill 安装到 <dir>/rebang、<dir>/rebang-*")
 	}
 
 	install := &cobra.Command{
@@ -63,9 +64,11 @@ rebang update 升级后会自动同步已安装的 skill。`,
 			}
 			var sts []skill.Status
 			for _, t := range ts {
-				if err := skill.Install(t.Dir(), buildinfo.Version, force); err != nil {
-					if errors.Is(err, skill.ErrForeign) {
-						return errs.New(errs.ExitGeneral, "skill_conflict", t.Dir()+" 已存在且不是由 rebang 安装的", "确认可以覆盖后加 --force")
+				if err := skill.Install(t, buildinfo.Version, force); err != nil {
+					var fe *skill.ForeignError
+					if errors.As(err, &fe) {
+						return errs.New(errs.ExitGeneral, "skill_conflict", fe.Dir+" 已存在且不是由 rebang 安装的",
+							"如果是通过 npx skills 等方式安装的，用原来的方式更新即可；确认可以覆盖后加 --force")
 					}
 					return errs.New(errs.ExitGeneral, errs.CodeGeneral, "安装 skill 失败: "+err.Error(), "")
 				}
@@ -99,18 +102,18 @@ rebang update 升级后会自动同步已安装的 skill。`,
 			}
 			out := []res{}
 			for _, t := range ts {
-				removed, err := skill.Uninstall(t.Dir())
+				removed, err := skill.Uninstall(t)
 				if err != nil && !errors.Is(err, skill.ErrForeign) {
 					return errs.New(errs.ExitGeneral, errs.CodeGeneral, "卸载失败: "+err.Error(), "")
 				}
-				out = append(out, res{t.Name, t.Dir(), removed})
+				out = append(out, res{t.Name, t.Root, removed})
 				state := "未安装"
 				if removed {
 					state = "已卸载"
 				} else if err != nil {
 					state = "跳过（非 rebang 安装）"
 				}
-				rows = append(rows, []string{t.Name, t.Dir(), state})
+				rows = append(rows, []string{t.Name, t.Root, state})
 			}
 			return a.Writer().Write(output.Result{
 				Data:    map[string]any{"skills": out},
@@ -174,9 +177,9 @@ func skillResult(sts []skill.Status) output.Result {
 		case s.Foreign:
 			state = "存在同名目录（非 rebang 安装）"
 		case s.Installed && s.UpToDate:
-			state = "已安装 " + s.Version
+			state = "已安装 " + s.Version + "：" + strings.Join(s.Skills, "、")
 		case s.Installed:
-			state = "已安装 " + s.Version + "（与程序版本不一致）"
+			state = "已安装 " + s.Version + "（与程序版本不一致，运行 rebang skill install 更新）"
 		}
 		rows = append(rows, []string{s.Agent, s.Dir, state})
 	}

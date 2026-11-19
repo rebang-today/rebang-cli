@@ -1,10 +1,17 @@
 # rebang
 
-今日热榜（[rebang.today](https://rebang.today)）官方命令行客户端。
+今日热榜（[rebang.today](https://rebang.today)）官方命令行客户端与 Agent Skill。
 
+装好后，你的 Agent（Claude Code、Codex、Cursor、Gemini CLI 等）就能读懂微博、知乎、抖音、B 站、GitHub 等上百个中文平台的实时热榜、历史热点与 AI 总结，你只管用自然语言提问。
+
+把下面这句话发给你的 Agent 即可完成安装：
+
+```text
+帮我安装今日热榜 CLI 和 Skill：https://cli.rebang.today/agent.md
+```
+
+- 带子命令运行输出结构化结果，适合脚本与 Agent 调用；输出到终端时默认表格，被管道读取时默认 JSON。
 - 不带参数运行进入全屏交互界面：分类 → 榜单 → 子榜单浏览、搜索、订阅，回车用浏览器打开。
-- 带子命令运行输出结构化结果，适合脚本与 AI Agent 调用；输出到终端时默认表格，被管道读取时默认 JSON。
-- 内置 Agent Skill，一条命令装进 Claude Code、Codex 等 Agent。
 
 ## 安装
 
@@ -34,7 +41,7 @@ brew install rebang-today/tap/rebang
 | `REBANG_VERSION` | 安装指定版本，如 `0.1.0` |
 | `REBANG_INSTALL_SKILL` | `1` 同时安装 Agent Skill，`0` 不安装 |
 
-检测到本机装有 Claude Code、Codex（`~/.claude`、`~/.codex`、`~/.agents`）时，安装脚本会询问是否同时安装 rebang Agent Skill，直接回车即安装；没有终端可询问时（CI 等）不安装。也可以用参数明确选择：
+检测到本机装有 Claude Code、Codex、Cursor、Gemini CLI 等（`~/.claude`、`~/.codex`、`~/.agents`、`~/.cursor`、`~/.gemini`）时，安装脚本会询问是否同时安装 rebang Agent Skill，直接回车即安装；没有终端可询问时（CI 等）不安装。也可以用参数明确选择：
 
 ```bash
 curl -fsSL https://cli.rebang.today/install.sh | sh -s -- --with-skill   # 或 --no-skill
@@ -100,7 +107,7 @@ rebang skill install        # 把 Skill 装进本机的 Agent
 | 命令 | 说明 |
 | --- | --- |
 | `menus` | 菜单列表 |
-| `tabs --menu <id\|key\|名称>` | 菜单下的 Tab 与二级 Tab |
+| `tabs --menu <id\|key\|名称>` / `tabs --all` | 菜单下的 Tab 与二级 Tab；`--all` 列出全部菜单的 Tab |
 | `nodes --menu <…>` / `nodes --tab <key>` | 节点（榜单）列表 |
 | `list --node <id>` / `list --tab <key> [--sub-tab <key>]` | 榜单，`-n` 指定条数（默认 30） |
 | `search <关键词> [--days N] [--source key] [--sort latest] [-n N]` | 搜索，非会员只能搜当天 |
@@ -176,29 +183,34 @@ export REBANG_TOKEN=...
 
 ## Agent Skill
 
+Skill 分两层（源文件在 [skills/](skills/)）：
+
+| Skill | 作用 |
+| --- | --- |
+| `rebang` | 命令行手册：每个命令能做什么、参数、JSON 字段、退出码、按需登录。Agent 按需读取 |
+| `rebang-research` | 应用：研究一个话题最近的热度与讨论，输出带原链接的简报 |
+
+后续会增加更多应用（如每日热点简报、内容监控汇总），都基于同一份手册。
+
+最简单的方式是把上面那句话发给 Agent，它会读取 [agent.md](site/agent.md) 完成安装与验证。也可以自己安装：
+
 ```bash
-rebang skill install              # 安装到本机已有的 Agent（Claude Code、Codex 等）
+rebang skill install              # 安装到本机已有的 Agent（Claude Code、Codex、Cursor、Gemini CLI 等）
 rebang skill install --agent claude
+rebang skill install --dir <skill 根目录>   # 其他 Agent
 rebang skill status
 rebang skill uninstall
 ```
 
 Skill 内嵌在程序中，`rebang update` 升级后会自动同步已安装的 Skill，保证与程序版本一致。
 
-### 交给 Agent 的安装指引
+也可以用其他工具安装（这些方式由各自的工具更新，`rebang skill` 不会覆盖它们）：
 
-想让 Claude Code、Codex 等 Agent 自己完成安装，可以把下面这段发给它：
-
-```text
-请帮我安装今日热榜命令行 rebang，并把它的 Agent Skill 装到本机：
-1. 运行 curl -fsSL https://cli.rebang.today/install.sh | sh -s -- --with-skill
-   （Windows 用 PowerShell：$env:REBANG_INSTALL_SKILL=1; irm https://cli.rebang.today/install.ps1 | iex）
-2. 运行 rebang skill install，确认 Skill 已安装（rebang skill status）。
-3. 运行 rebang list --tab zhihu -n 5 -o json 验证可用，这一步不需要登录。
-不需要登录。以后用到我的关注、内容监控等功能时，再按需帮我登录。
+```bash
+npx skills add rebang-today/rebang-cli -g
 ```
 
-安装脚本装在 `~/.local/bin`，如果 Agent 提示找不到 `rebang`，可以用完整路径 `~/.local/bin/rebang` 运行。
+Claude Code 插件市场：`/plugin marketplace add rebang-today/rebang-cli`，再 `/plugin install rebang@rebang-today`。
 
 Agent 通过 JSON 调用时，如果有新版本或已安装的 Skill 与程序版本不一致，结果的顶层对象会附带 `_notice` 字段（`update`、`skill` 各带一条建议命令），Skill 会让 Agent 在完成任务后提醒你，不会自行升级。设置 `REBANG_NO_NOTICE=1` 可关闭。
 

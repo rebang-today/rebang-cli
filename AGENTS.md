@@ -21,10 +21,12 @@
 | `internal/output` | json / md / table 输出与错误输出 |
 | `internal/errs` | 结构化错误与退出码（D-32） |
 | `internal/update` | manifest、sha256、minisign 校验与自升级 |
-| `internal/skill` | 内嵌 Agent Skill（`files/` 目录即 skill 内容） |
+| `skills/` | Agent Skill 的唯一来源：`rebang/` 命令行手册，`rebang-*/` 应用（D-61），通过 `skills/embed.go` 编译进程序 |
+| `internal/skill` | skill 的安装、状态、同步与卸载 |
+| `.claude-plugin/` | Claude Code 插件市场清单（D-67） |
 | `internal/release`、`tools/manifestgen` | 发版时生成 `manifest.json`，不随程序发布 |
 | `scripts/` | `install.sh`、`install.ps1`，发版时上传到 CDN |
-| `site/` | 下载站首页 `index.html`（安装教程），发版时上传到 cli.rebang.today 根目录；内容与 README 保持一致，不引用外部资源 |
+| `site/` | 下载站首页 `index.html` 与给 Agent 的安装说明 `agent.md`（D-66），发版时上传到 cli.rebang.today 根目录；内容与 README 保持一致，不引用外部资源 |
 | `.goreleaser.yaml`、`.github/workflows/` | 构建、签名、发布流水线，说明见 `docs/release.md` |
 
 安装包命名 `rebang_<版本>_<系统>_<架构>.tar.gz|zip` 被 goreleaser、manifestgen、安装脚本与 `internal/update` 共同依赖，修改时需同步。`internal/update/minisign.pub` 是发布公钥，只能替换为正式公钥，不要提交测试密钥。
@@ -37,7 +39,7 @@
 - 只有服务端明确返回 401 时才提示重新登录；网络错误与 5xx 不得清除凭证（D-34）。
 - 请求一律通过 `internal/api.Client`，保证 User-Agent 为 `rebang-cli/<版本> (<系统>/<架构>)`（D-33）。
 - 不提交服务器地址、内部域名、密钥和后台接口。默认地址只能是公开地址，联调用环境变量覆盖。
-- 修改 skill 内容时编辑 `internal/skill/files/`，版本号用 `{{VERSION}}` 占位。
+- 修改 skill 内容时编辑 `skills/`（说明见 `skills/README.md`），不写版本号或占位符（D-60）。新增或修改命令、参数时同步更新 `skills/rebang/` 手册，`TestSkillManualCoversCommands` 会检查覆盖。
 
 ## 开发
 

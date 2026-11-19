@@ -36,19 +36,24 @@ func TestSkillCommands(t *testing.T) {
 	// 升级后同步
 	setVersion(t, "9.0.0")
 	out, _, code = h.run(false, "skill", "sync")
-	if code != 0 || !strings.Contains(out, "rebang") {
+	if code != 0 || !strings.Contains(out, filepath.Join(".claude", "skills")) {
 		t.Fatal(out)
 	}
-	b, _ := os.ReadFile(filepath.Join(home, ".claude", "skills", "rebang", "SKILL.md"))
+	b, _ := os.ReadFile(filepath.Join(home, ".claude", "skills", "rebang", ".rebang-skill.json"))
 	if !strings.Contains(string(b), "9.0.0") {
 		t.Fatal("not synced")
+	}
+	if _, err := os.Stat(filepath.Join(home, ".claude", "skills", "rebang-research", "SKILL.md")); err != nil {
+		t.Fatal("应用 skill 应随手册一起安装：", err)
 	}
 	_, _, code = h.run(false, "skill", "uninstall")
 	if code != 0 {
 		t.Fatal(code)
 	}
-	if _, err := os.Stat(filepath.Join(home, ".claude", "skills", "rebang")); !os.IsNotExist(err) {
-		t.Fatal("not removed")
+	for _, n := range []string{"rebang", "rebang-research"} {
+		if _, err := os.Stat(filepath.Join(home, ".claude", "skills", n)); !os.IsNotExist(err) {
+			t.Fatal("not removed: " + n)
+		}
 	}
 	_, _, code = h.run(false, "skill", "install", "--agent", "vim")
 	if code != errs.ExitUsage {
