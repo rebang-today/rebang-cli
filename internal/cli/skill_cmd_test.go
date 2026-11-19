@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,7 +37,12 @@ func TestSkillCommands(t *testing.T) {
 	// 升级后同步
 	setVersion(t, "9.0.0")
 	out, _, code = h.run(false, "skill", "sync")
-	if code != 0 || !strings.Contains(out, filepath.Join(".claude", "skills")) {
+	// 按 JSON 解析后比较，Windows 路径中的反斜杠在 JSON 里会被转义。
+	var synced struct {
+		Updated []string `json:"updated"`
+	}
+	if code != 0 || json.Unmarshal([]byte(out), &synced) != nil || len(synced.Updated) != 1 ||
+		!strings.HasSuffix(synced.Updated[0], filepath.Join(".claude", "skills")) {
 		t.Fatal(out)
 	}
 	b, _ := os.ReadFile(filepath.Join(home, ".claude", "skills", "rebang", ".rebang-skill.json"))
