@@ -26,7 +26,7 @@
 | `.claude-plugin/` | Claude Code 插件市场清单（D-67） |
 | `internal/release`、`tools/manifestgen` | 发版时生成 `manifest.json`，不随程序发布 |
 | `scripts/` | `install.sh`、`install.ps1`，发版时上传到 CDN |
-| `site/` | 下载站首页 `index.html` 与给 Agent 的安装说明 `agent.md`（D-66），发版时上传到 cli.rebang.today 根目录；内容与 README 保持一致，不引用外部资源 |
+| `site/` | 下载站首页 `index.html` 与CLI 安装指南 `install.md`（一句话交给 Agent 安装时读取）（D-66），发版时上传到 cli.rebang.today 根目录；内容与 README 保持一致，不引用外部资源 |
 | `.goreleaser.yaml`、`.github/workflows/` | 构建、签名、发布流水线，说明见 `docs/release.md` |
 
 安装包命名 `rebang_<版本>_<系统>_<架构>.tar.gz|zip` 被 goreleaser、manifestgen、安装脚本与 `internal/update` 共同依赖，修改时需同步。`internal/update/minisign.pub` 是发布公钥，只能替换为正式公钥，不要提交测试密钥。

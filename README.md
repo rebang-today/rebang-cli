@@ -7,7 +7,7 @@
 把下面这句话发给你的 Agent 即可完成安装：
 
 ```text
-帮我安装今日热榜 CLI 和 Skill：https://cli.rebang.today/agent.md
+帮我安装今日热榜 CLI 和 Skill：https://cli.rebang.today/install.md
 ```
 
 - 带子命令运行输出结构化结果，适合脚本与 Agent 调用；输出到终端时默认表格，被管道读取时默认 JSON。
@@ -192,7 +192,7 @@ Skill 分两层（源文件在 [skills/](skills/)）：
 
 后续会增加更多应用（如每日热点简报、内容监控汇总），都基于同一份手册。
 
-最简单的方式是把上面那句话发给 Agent，它会读取 [agent.md](site/agent.md) 完成安装与验证。也可以自己安装：
+最简单的方式是把上面那句话发给 Agent，它会读取[安装指南](site/install.md)完成安装与验证。也可以自己安装：
 
 ```bash
 rebang skill install              # 安装到本机已有的 Agent（Claude Code、Codex、Cursor、Gemini CLI 等）

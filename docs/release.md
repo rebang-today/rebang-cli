@@ -65,7 +65,7 @@ git push origin v0.1.0
 2. 生成 `checksums.txt`（sha256）与每个安装包的 `.minisig` 签名；
 3. 发布 GitHub Releases，更新 Homebrew tap；
 4. 用内置公钥重新校验全部签名；
-5. 上传安装包、签名、`checksums.txt` 到 Bucket 的 `v<版本>/`（`Cache-Control: public, max-age=31536000, immutable`），上传根目录的 `install.sh`、`install.ps1`（`max-age=60`）、首页 `index.html`（`site/index.html`）与给 Agent 的安装说明 `agent.md`（`site/agent.md`），后两者 `max-age=300`；
+5. 上传安装包、签名、`checksums.txt` 到 Bucket 的 `v<版本>/`（`Cache-Control: public, max-age=31536000, immutable`），上传根目录的 `install.sh`、`install.ps1`（`max-age=60`）、首页 `index.html`（`site/index.html`）与CLI 安装指南 `install.md`（`site/install.md`），后两者 `max-age=300`；
 6. **最后**生成并上传根目录的 `manifest.json`（`max-age=60`）。此前确认下载站上的安装包已可下载。
 
 带 `-` 的预发布版本（如 `v0.2.0-rc.1`）只发布到 GitHub Releases，不上传下载站、不更新 manifest，已安装的用户不会收到升级。
@@ -75,7 +75,7 @@ git push origin v0.1.0
 ```
 https://cli.rebang.today/
 ├── index.html        # 首页，源文件 site/index.html
-├── agent.md          # 给 Agent 的安装说明，源文件 site/agent.md
+├── install.md        # CLI 安装指南，源文件 site/install.md
 ├── manifest.json
 ├── install.sh
 ├── install.ps1

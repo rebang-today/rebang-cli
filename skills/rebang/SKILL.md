@@ -10,7 +10,7 @@ rebang 是今日热榜的官方命令行，覆盖上百个中文平台的榜单�
 ## 开始之前
 
 1. 运行 `rebang version` 确认已安装。找不到命令时先试 `~/.local/bin/rebang version`（Windows 为 `%LOCALAPPDATA%\Programs\rebang\rebang.exe`）。
-2. 仍然没有，就按 https://cli.rebang.today/agent.md 的步骤安装。安装不需要登录，也不要顺便让用户登录。
+2. 仍然没有，就按 https://cli.rebang.today/install.md 的步骤安装。安装不需要登录，也不要顺便让用户登录。
 
 ## 调用约定
 

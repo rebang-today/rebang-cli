@@ -105,7 +105,7 @@ jobs:
           # 下载站首页（安装教程），Bucket 的静态网站默认首页设为 index.html。
           put site/index.html index.html --cache-control "max-age=300" --content-type "text/html; charset=utf-8"
           # 给 Agent 读的安装说明，首页让用户把这个链接发给自己的 Agent。
-          put site/agent.md agent.md --cache-control "max-age=300" --content-type "text/markdown; charset=utf-8"
+          put site/install.md install.md --cache-control "max-age=300" --content-type "text/markdown; charset=utf-8"
 
       - name: 写入 manifest.json（最后一步）
         if: ${{ !contains(github.ref_name, '-') }}

@@ -1,4 +1,4 @@
-# 安装今日热榜 rebang（给 AI Agent 的说明）
+# 今日热榜 rebang CLI 安装指南
 
 你正在帮用户安装今日热榜（rebang.today）的命令行 `rebang` 和它的 Agent Skill。装好后，用户可以直接用自然语言问你各平台的热榜、热点和 AI 总结。按下面的步骤做，每步看结果再继续。
 
